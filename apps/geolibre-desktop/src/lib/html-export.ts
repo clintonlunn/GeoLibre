@@ -114,7 +114,7 @@ export function buildProjectHtml(options: BuildProjectHtmlOptions): string {
 </style>
 </head>
 <body>
-<iframe id="geolibre-frame" src="${escapeHtml(iframeSrc)}" allow="fullscreen" allowfullscreen></iframe>
+<iframe id="geolibre-frame" src="${escapeHtml(iframeSrc)}" sandbox="allow-scripts allow-same-origin allow-forms" allow="fullscreen" allowfullscreen></iframe>
 <script type="application/json" id="geolibre-project">${projectJson}</script>
 <script>
 (function () {
