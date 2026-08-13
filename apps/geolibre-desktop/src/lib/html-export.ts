@@ -102,8 +102,8 @@ export function buildProjectHtml(options: BuildProjectHtmlOptions): string {
   // Escape "<" so a property value can't break out of the JSON <script> block.
   const projectJson = JSON.stringify(redactCredentials(project)).replace(/</g, "\\u003c");
 
-  // The iframe sandbox below withholds top-navigation and popups, but each of
-  // the tokens it does grant is load-bearing - don't trim them:
+  // The iframe sandbox below withholds top-navigation, but each of the tokens
+  // it does grant is load-bearing - don't trim them:
   //   allow-scripts       the framed page is the app itself
   //   allow-same-origin   without it the frame's origin is opaque ("null"), so
   //                       the event.origin === viewerOrigin check below never
@@ -114,6 +114,14 @@ export function buildProjectHtml(options: BuildProjectHtmlOptions): string {
   //                       exports (Save Project, chart/processing/georeferencer
   //                       output) run from inside the frame; browsers block
   //                       those silently without this token
+  //   allow-popups        MapLibre's AttributionControl renders its basemap
+  //                       credits as target="_blank" links and openExternalLink
+  //                       falls back to window.open on the web build; without
+  //                       this token both are dead clicks, which would break
+  //                       the attribution the basemap licences require
+  // Deliberately NOT granted: allow-popups-to-escape-sandbox. Popups opened
+  // from here inherit these same flags, which is enough to render an external
+  // page, and escaping would hand a link the full unsandboxed context.
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -126,7 +134,7 @@ export function buildProjectHtml(options: BuildProjectHtmlOptions): string {
 </style>
 </head>
 <body>
-<iframe id="geolibre-frame" src="${escapeHtml(iframeSrc)}" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" allow="fullscreen" allowfullscreen></iframe>
+<iframe id="geolibre-frame" src="${escapeHtml(iframeSrc)}" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups" allow="fullscreen" allowfullscreen></iframe>
 <script type="application/json" id="geolibre-project">${projectJson}</script>
 <script>
 (function () {

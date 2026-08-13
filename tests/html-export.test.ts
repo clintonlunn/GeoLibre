@@ -26,7 +26,7 @@ describe("buildProjectHtml", () => {
     // "&" is HTML-escaped to "&amp;" in the attribute (decoded back by browsers).
     assert.match(
       html,
-      /<iframe id="geolibre-frame" src="https:\/\/web\.geolibre\.app\/\?embed=1&amp;welcome=0" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"/,
+      /<iframe id="geolibre-frame" src="https:\/\/web\.geolibre\.app\/\?embed=1&amp;welcome=0" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups"/,
     );
     // The project rides in a JSON <script> block and is replayed over the bridge.
     assert.match(html, /id="geolibre-project"/);
@@ -167,13 +167,17 @@ describe("buildProjectHtml", () => {
     );
   });
 
-  it("includes a sandbox attribute that restricts top-navigation and popups", () => {
+  it("includes a sandbox attribute that restricts top-navigation", () => {
     const html = buildProjectHtml({ project: PROJECT, title: "T" });
     // The sandbox must be present with only the minimal set of permissions.
-    assert.match(html, /sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"/);
-    // Dangerous permissions must NOT be present.
+    assert.match(
+      html,
+      /sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups"/,
+    );
+    // Dangerous permissions must NOT be present. Popups are allowed (attribution
+    // links), but they inherit the sandbox rather than escaping it.
     assert.ok(!html.includes("allow-top-navigation"));
-    assert.ok(!html.includes("allow-popups"));
+    assert.ok(!html.includes("allow-popups-to-escape-sandbox"));
   });
 });
 
