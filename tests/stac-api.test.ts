@@ -241,6 +241,57 @@ test("searchStaticStac traverses child and item links and applies filters", asyn
   );
 });
 
+test("searchStaticStac pages through a catalog holding more items than one page fits", async () => {
+  const total = 25;
+  const docs: Record<string, unknown> = {
+    "https://example.com/stac/catalog.json": {
+      type: "Catalog",
+      links: Array.from({ length: total }, (_value, index) => ({
+        rel: "item",
+        href: `./item${index}.json`,
+      })),
+    },
+  };
+  for (let index = 0; index < total; index += 1) {
+    docs[`https://example.com/stac/item${index}.json`] = {
+      type: "Feature",
+      id: `item${index}`,
+      collection: "many",
+      bbox: [0, 0, 1, 1],
+      geometry: null,
+      properties: { datetime: "2024-05-01T00:00:00Z" },
+      assets: {},
+    };
+  }
+  const fetcher = (async (input: RequestInfo | URL) =>
+    jsonResponse(docs[String(input)])) as typeof fetch;
+  const connection = {
+    url: "https://example.com/stac/catalog.json",
+    title: "Static",
+    isApi: false,
+    collections: [],
+    root: docs["https://example.com/stac/catalog.json"] as Record<string, unknown>,
+  };
+
+  const first = await searchStaticStac(connection, { limit: 10 }, fetcher);
+  assert.equal(first.items.length, 10);
+  assert.ok(first.cursor, "a walk with documents left over reports where it stopped");
+  assert.equal(first.matched, undefined);
+
+  const second = await searchStaticStac(connection, { limit: 10, cursor: first.cursor }, fetcher);
+  assert.equal(second.items.length, 10);
+  assert.deepEqual(
+    second.items.map((item) => item.id).filter((id) => first.items.some((seen) => seen.id === id)),
+    [],
+    "a resumed page repeats nothing from the page before it",
+  );
+
+  const third = await searchStaticStac(connection, { limit: 10, cursor: second.cursor }, fetcher);
+  assert.equal(third.items.length, 5);
+  assert.equal(third.cursor, undefined, "the walk is done, so there is nothing to resume");
+  assert.equal(third.matched, 5);
+});
+
 test("asset and bbox helpers recognize common STAC data", () => {
   assert.equal(isVisualizableAsset({ href: "https://example.com/a.TIF?download=1" }), true);
   assert.equal(isVisualizableAsset({ href: "https://example.com/data.bin" }), false);
