@@ -550,7 +550,16 @@ function syncExternalNativeLayer(
     return;
   }
 
-  ensureExternalGeoJsonNativeLayer(map, layer, nativeLayerIds, beforeId);
+  // maplibre-gl-vector owns both the source and presentation layers and, since
+  // v0.10.11, restores them from its retained layer record after setStyle.
+  // Rebuilding its missing layer here races that style.load handler: the host
+  // circle is drawn first with GeoLibre's generic paint, then the control adds
+  // its own circle, leaving concentric point rings after a basemap swap. Other
+  // external GeoJSON registrations do not provide a restore handler, so retain
+  // the host fallback for them.
+  if (layer.metadata.sourceKind !== "maplibre-gl-vector") {
+    ensureExternalGeoJsonNativeLayer(map, layer, nativeLayerIds, beforeId);
+  }
 
   if (
     !controlOwnsPaint(layer) &&

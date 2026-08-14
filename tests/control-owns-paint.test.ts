@@ -51,6 +51,36 @@ function externalNativeLayer(patch: Partial<GeoLibreLayer> = {}): GeoLibreLayer 
 }
 
 describe("controlOwnsPaint external native layers", () => {
+  it("waits for maplibre-gl-vector to restore its own source and layers", () => {
+    const { map, calls } = makeMapStub("some-other-layer", "circle");
+    const layer = externalNativeLayer({
+      geojson: {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {},
+            geometry: { type: "Point", coordinates: [0, 0] },
+          },
+        ],
+      },
+      metadata: {
+        externalNativeLayer: true,
+        nativeLayerIds: ["mub-deliveries-circle"],
+        sourceIds: ["mub-deliveries-source"],
+        sourceKind: "maplibre-gl-vector",
+        controlOwnsPaint: true,
+      },
+    });
+
+    syncLayer(map as never, layer);
+
+    assert.ok(
+      !calls.some((call) => call.method === "addSource" || call.method === "addLayer"),
+      "expected the host not to race the control's style-load restoration",
+    );
+  });
+
   it("syncs visibility and ordering but never overwrites the control's paint", () => {
     const { map, calls } = makeMapStub("mub-deliveries", "circle");
     const layer = externalNativeLayer({
