@@ -15,6 +15,7 @@ export interface ArcgisProjectImportWarning {
     | "layer-type"
     | "missing-source"
     | "format"
+    | "file-geodatabase"
     | "network-path"
     | "service"
     | "browser-local-file"
@@ -445,6 +446,14 @@ function resolveRasterSource(
   const dataset = stringValue(connection.dataset);
   if (!workspace && !dataset) return { reason: "missing-source" };
   if (isNetworkPath(workspace)) return { reason: "network-path" };
+  // A raster dataset stored in a geodatabase reports the same reason a
+  // geodatabase feature class does, rather than a bare "format".
+  if (
+    stringValue(connection.workspaceFactory).toLowerCase().includes("filegdb") ||
+    extension(workspace) === "gdb"
+  ) {
+    return { reason: "file-geodatabase" };
+  }
   if (!workspace || !dataset) return { reason: "missing-source" };
   const path = resolveRelativePath(joinPath(workspace, dataset), projectPath);
   return ["tif", "tiff"].includes(extension(path)) ? { path } : { reason: "format" };
@@ -469,7 +478,12 @@ function resolveDataSource(
   } else if (workspaceFactory.includes("text") && dataset) {
     path = joinPath(workspace, dataset);
   } else if (workspaceFactory.includes("filegdb")) {
-    return { reason: "format" };
+    // Reported distinctly from a plain unsupported "format" because a File
+    // Geodatabase backs whole projects at a time -- a .gdb-based project can
+    // produce hundreds of identical warnings, and "data format is not
+    // supported" leaves the user with no idea which format that was, nor that
+    // the desktop build can add those feature classes another way.
+    return { reason: "file-geodatabase" };
   } else if (dataset && extension(workspace) === "gpkg") {
     path = workspace;
   } else if (!path && dataset) {

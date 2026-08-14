@@ -213,9 +213,35 @@ describe("ArcGIS Pro project import", () => {
       result.warnings.map((warning) => [warning.layerName, warning.reason]),
       [
         ["Hosted", "service"],
-        ["Parcels", "format"],
+        // Distinct from a plain "format" so a .gdb-backed project, where every
+        // layer fails this way, says which format that was (GeoLibre#1904).
+        ["Parcels", "file-geodatabase"],
         ["Labels", "layer-type"],
       ],
+    );
+  });
+
+  it("reports a geodatabase raster as a geodatabase, not a bad format", () => {
+    const mapx = {
+      type: "CIMMap",
+      name: "Elevation",
+      defaultExtent: { xmin: -80, ymin: 30, xmax: -70, ymax: 40, spatialReference: { wkid: 4326 } },
+      layerDefinitions: [
+        {
+          type: "CIMRasterLayer",
+          name: "DEM",
+          dataConnection: {
+            workspaceFactory: "FileGDB",
+            workspaceConnectionString: "DATABASE=C:\\data\\terrain.gdb",
+            dataset: "dem",
+          },
+        },
+      ],
+    };
+    const result = importArcgisProject(JSON.stringify(mapx), "C:\\projects\\main.mapx");
+    assert.deepEqual(
+      result.warnings.map((warning) => [warning.layerName, warning.reason]),
+      [["DEM", "file-geodatabase"]],
     );
   });
 
