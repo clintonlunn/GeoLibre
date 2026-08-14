@@ -385,7 +385,7 @@ function intersectZoomRange(
 }
 
 export function syncLayer(map: maplibregl.Map, layer: GeoLibreLayer, beforeId?: string): void {
-  if (isExternalNativeLayer(layer)) {
+  if (isExternalNativeLayer(layer) || isVectorControlLayer(layer)) {
     syncExternalNativeLayer(map, layer, beforeId);
     return;
   }
@@ -449,6 +449,32 @@ export function syncLayer(map: maplibregl.Map, layer: GeoLibreLayer, beforeId?: 
 
 function isExternalNativeLayer(layer: GeoLibreLayer): boolean {
   return getExternalNativeLayerIds(layer).length > 0;
+}
+
+/** `metadata.sourceKind` for the layers maplibre-gl-vector owns. */
+const VECTOR_CONTROL_SOURCE_KIND = "maplibre-gl-vector";
+
+/**
+ * A layer the Add Vector Layer control owns, matched by `sourceKind` rather
+ * than by having native layer ids.
+ *
+ * Restoring after a style change, the control clears its retained record's
+ * `layerIds` and then *awaits* re-reading the source data before it can fill
+ * them back in. GeoLibre mirrors the control's layer list into the store, so a
+ * sync landing inside that window sees `nativeLayerIds: []`, no longer
+ * recognizes the layer as external, and rebuilds it down the ordinary GeoJSON
+ * path: a second source and circle layer carrying GeoLibre's own paint,
+ * stacked under the one the control restores a moment later. That is the
+ * concentric point ring of opengeos/GeoLibre#1902, which the guard in
+ * {@link syncExternalNativeLayer} does not catch because it only runs once the
+ * ids are already back.
+ *
+ * The control owns these layers in either window, so route them to the
+ * external path throughout; with no ids to work on it no-ops until the control
+ * brings its layers back and the next sync reconciles them normally.
+ */
+function isVectorControlLayer(layer: GeoLibreLayer): boolean {
+  return layer.metadata.sourceKind === VECTOR_CONTROL_SOURCE_KIND;
 }
 
 function syncExternalNativeLayer(
@@ -557,7 +583,7 @@ function syncExternalNativeLayer(
   // its own circle, leaving concentric point rings after a basemap swap. Other
   // external GeoJSON registrations do not provide a restore handler, so retain
   // the host fallback for them.
-  if (layer.metadata.sourceKind !== "maplibre-gl-vector") {
+  if (!isVectorControlLayer(layer)) {
     ensureExternalGeoJsonNativeLayer(map, layer, nativeLayerIds, beforeId);
   }
 
@@ -1632,7 +1658,7 @@ function syncVectorControlPointSymbology(
   layer: GeoLibreLayer,
   beforeId?: string,
 ): void {
-  if (layer.metadata.sourceKind !== "maplibre-gl-vector") return;
+  if (!isVectorControlLayer(layer)) return;
   const syntheticMarkerId = markerLayerId(layer.id);
   const singleRenderer = styleValue(layer.style, "pointRenderer") === "single";
   const circleNativeId = getExternalNativeLayerIds(layer).find(
