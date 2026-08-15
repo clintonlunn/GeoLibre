@@ -225,7 +225,13 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     /** What a click or Space means: choose a collection, or open a folder. */
     const activate = (additive: boolean): void => {
       // Choosing a collection costs no read; only a container has to be opened to be useful.
-      if (kind === "collection") return select(node.href, row, additive);
+      // A collection that turned out to hold collections is both, so it does both — otherwise a
+      // row could be closed and never opened again, its children out of reach.
+      if (kind === "collection") {
+        select(node.href, row, additive);
+        if (self.children.length) expand(!self.open);
+        return;
+      }
       if (loaded) return expand(!self.open);
       void reveal(additive);
     };
@@ -257,7 +263,7 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         ArrowDown: () => step(1),
         ArrowUp: () => step(-1),
         ArrowRight: () => {
-          if (kind === "collection") return;
+          if (kind === "collection" && !self.children.length) return;
           if (!self.open) return activate(false);
           focusRow(self.children[0]);
         },

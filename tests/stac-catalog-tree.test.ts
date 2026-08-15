@@ -555,6 +555,37 @@ test("holding a modifier does not stop the arrows walking the tree", async () =>
   });
 });
 
+test("a collection that holds collections can be closed and opened again", async () => {
+  await withDom(async () => {
+    const read = async (): Promise<StacOpenedNode> => ({
+      kind: "collection",
+      children: [node("Landsat 9", "collection")],
+    });
+    const tree = buildCatalogTree({ labels: LABELS, onError: () => {}, read });
+    tree.reset([node("Landsat")]);
+    const [landsat] = rowsOf(tree);
+
+    click(landsat);
+    await settle();
+    const box = landsat.nextElementSibling as HTMLElement;
+    assert.equal(box.hidden, false);
+    assert.deepEqual(tree.selection(), ["https://example.com/Landsat.json"]);
+
+    // Left closes it; the row is a collection, so nothing else used to be willing to open it and
+    // its children were gone for good.
+    press(landsat, "ArrowLeft");
+    assert.equal(box.hidden, true);
+
+    press(landsat, "ArrowRight");
+    await settle();
+    assert.equal(box.hidden, false, "the arrows can reopen what they closed");
+
+    click(landsat);
+    await settle();
+    assert.equal(box.hidden, true, "and so can a click");
+  });
+});
+
 test("reset drops the previous catalog's rows and selection", async () => {
   await withDom(async () => {
     const tree = buildCatalogTree({ labels: LABELS, onError: () => {} });

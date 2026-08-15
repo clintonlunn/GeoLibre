@@ -435,7 +435,9 @@ export async function searchStaticStac(
   // Where a search starts and what it filters by belong to the walk, not to the call: both can
   // change between pages, and one accumulated list filtered two ways is worse than either.
   const roots: Unread[] = (options.entries?.length ? options.entries : [connection.url]).map(
-    // The root is already in hand, so a chosen entry that is the root costs no read.
+    // The root is already in hand, so a chosen entry that is the root costs no read. Any other
+    // entry is read here even when the tree read it to classify it: passing that document along
+    // would mean the tree holding every document it has opened, to save one request per search.
     (url) => (url === connection.url ? { url, document: connection.root } : { url }),
   );
   const walk = options.cursor ?? {
