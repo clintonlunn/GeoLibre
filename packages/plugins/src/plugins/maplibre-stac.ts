@@ -8,6 +8,7 @@ import {
   isVisualizableAsset,
   itemBbox,
   loadStacIndex,
+  openCatalogNode,
   searchStacApi,
   searchStaticStac,
   type StacAsset,
@@ -18,6 +19,8 @@ import {
   type StacSearchResult,
   type StacSearchCursor,
 } from "./stac-api";
+import { buildCatalogTree } from "./stac-catalog-tree";
+import { el } from "../panel-dom";
 
 export const STAC_PLUGIN_ID = "geolibre-stac-catalogs";
 const PANEL_ID = STAC_PLUGIN_ID;
@@ -114,6 +117,8 @@ export interface StacLabels {
   searching: string;
   loadingMore: string;
   noMatchesHere: string;
+  treeEmpty: string;
+  treeOpenFailed: string;
   noResults: string;
   searchFailed: string;
   loadMore: string;
@@ -182,6 +187,8 @@ let labels: StacLabels = {
   searching: "Searching STAC items…",
   loadingMore: "Loading more items…",
   noMatchesHere: "Nothing matched in that part of the catalog. Load more to keep searching.",
+  treeEmpty: "Empty",
+  treeOpenFailed: "Could not open this catalog",
   noResults: "No STAC items matched these filters.",
   searchFailed: "STAC search failed",
   loadMore: "Load more",
@@ -255,15 +262,6 @@ const style = {
     "display:flex;flex-direction:column;gap:5px;padding:8px;border:1px solid hsl(var(--border));" +
     "border-radius:7px;background:hsl(var(--muted));",
 } as const;
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 
 function field(label: string, type = "text"): { wrap: HTMLElement; input: HTMLInputElement } {
   const wrap = el("label");
@@ -554,6 +552,13 @@ function buildPanel(container: HTMLElement): () => void {
   // Catalogs can advertise hundreds of collections, so let the list be dragged taller.
   collectionSelect.style.cssText = `${style.input}resize:vertical;overflow:auto;min-height:58px;`;
   collectionSelect.title = labels.collectionsHint;
+  // An API answers with a flat list of collections; a static catalog is a tree read as it opens.
+  const tree = buildCatalogTree({
+    labels: { empty: labels.treeEmpty, openFailed: labels.treeOpenFailed },
+    onError: (message) => setStatus(message, true),
+    onActivate: showCollection,
+    signal: controller.signal,
+  });
   const extentRow = el("label");
   extentRow.style.cssText = style.row;
   const useExtent = el("input");
@@ -599,6 +604,7 @@ function buildPanel(container: HTMLElement): () => void {
   searchSection.append(
     catalogInfo,
     collectionSelect,
+    tree.element,
     extentRow,
     bboxField.wrap,
     drawRow,
@@ -868,7 +874,28 @@ function buildPanel(container: HTMLElement): () => void {
     return labels.showing(allItems.length);
   };
 
-  const runSearch = async (append: boolean): Promise<void> => {
+  // A double-click means the same here as in the tree: search this one.
+  collectionSelect.addEventListener("dblclick", () => {
+    const chosen = collectionSelect.selectedOptions[0]?.value;
+    const extent = connection?.collections.find((collection) => collection.id === chosen)?.extent;
+    const box = extent?.spatial?.bbox?.[0];
+    void runSearch(false);
+    if (box && box.length >= 4) {
+      appRef?.fitBounds?.([box[0], box[1], box[box.length / 2], box[box.length / 2 + 1]]);
+    }
+  });
+
+  /** The tree asked for a collection: search it, and send the map to it. */
+  function showCollection(href: string, bbox?: [number, number, number, number]): void {
+    void runSearch(false);
+    if (bbox) return void appRef?.fitBounds?.(bbox);
+    // A collection guessed from its link has never been read, so its extent has to be fetched.
+    void openCatalogNode(href, fetch, controller.signal)
+      .then((node) => node.bbox && appRef?.fitBounds?.(node.bbox))
+      .catch(() => undefined);
+  }
+
+  async function runSearch(append: boolean): Promise<void> {
     if (!connection) return;
     const generation = ++searchGeneration;
     searchButton.disabled = true;
@@ -885,6 +912,7 @@ function buildPanel(container: HTMLElement): () => void {
         bbox: parseBbox(),
         datetime,
         collections: selectedCollections,
+        entries: connection.isApi ? [] : tree.selection(),
         additional: parseAdditionalParams(),
         limit: 20,
         next: append ? nextPage : undefined,
@@ -941,6 +969,9 @@ function buildPanel(container: HTMLElement): () => void {
       } else {
         collectionSelect.hidden = true;
       }
+      const children = connection.children ?? [];
+      tree.reset(children);
+      tree.element.hidden = connection.isApi || !children.length;
       searchSection.hidden = false;
       renderSection.hidden = false;
       clearSearchResults(false);

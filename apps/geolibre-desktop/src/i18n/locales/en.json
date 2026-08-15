@@ -3400,6 +3400,8 @@
     "searching": "Searching STAC items…",
     "loadingMore": "Loading more items…",
     "noMatchesHere": "Nothing matched in that part of the catalog. Load more to keep searching.",
+    "treeEmpty": "Empty",
+    "treeOpenFailed": "Could not open this catalog",
     "noResults": "No STAC items matched these filters.",
     "searchFailed": "STAC search failed",
     "showing": "Showing {{count}} items.",

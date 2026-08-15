@@ -1,0 +1,179 @@
+import { expect, test, type Page } from "@playwright/test";
+import { waitForMap } from "./helpers";
+
+// The catalog tree paints its selection through inline styles, which only a real browser resolves:
+// `hsl(var(--primary))` is a string until a CSSOM accepts it and a stylesheet defines the variable.
+// The unit tests run against a DOM double that stores any string it is given, so a highlight that
+// never appears — or never goes away — reads as passing there. This suite is the check that cannot
+// be faked: it asks the browser what colour the row actually is.
+const ROOT = "https://stac.test/catalog.json";
+
+const DOCUMENTS: Record<string, unknown> = {
+  "https://stac.test/catalog.json": {
+    type: "Catalog",
+    id: "e2e",
+    title: "E2E Catalog",
+    links: [
+      { rel: "child", href: "./hazards/collection.json", title: "Hazards" },
+      { rel: "child", href: "./geology/collection.json", title: "Geology" },
+      { rel: "child", href: "./topics/catalog.json", title: "Topics" },
+    ],
+  },
+  "https://stac.test/topics/catalog.json": {
+    type: "Catalog",
+    id: "topics",
+    links: [{ rel: "child", href: "./water/collection.json", title: "Water" }],
+  },
+};
+
+/** Serves the fixture catalog, so the suite needs no network and no third-party catalog. */
+async function serveCatalog(page: Page): Promise<void> {
+  await page.route("https://stac.test/**", async (route) => {
+    const document = DOCUMENTS[route.request().url()];
+    if (!document) {
+      await route.fulfill({ status: 404, body: "not found" });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(document),
+    });
+  });
+}
+
+async function openStacPanel(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Plugins", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Web Services" }).click();
+  await page.getByRole("menuitem", { name: "STAC Catalogs" }).click();
+  await page.getByPlaceholder("https://example.org/stac/").fill(ROOT);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+}
+
+const backgroundOf = (page: Page, name: string) =>
+  page.getByRole("treeitem", { name }).evaluate((row) => getComputedStyle(row).backgroundColor);
+
+test("the tree paints the selection, and lets go of it", async ({ page }) => {
+  await serveCatalog(page);
+  await waitForMap(page);
+  await openStacPanel(page);
+
+  const hazards = page.getByRole("treeitem", { name: "Hazards" });
+  const geology = page.getByRole("treeitem", { name: "Geology" });
+  await expect(hazards).toBeVisible();
+
+  const unselected = await backgroundOf(page, "Hazards");
+  await hazards.click();
+  const selected = await backgroundOf(page, "Hazards");
+  expect(selected).not.toBe(unselected);
+  expect(selected).not.toBe("rgba(0, 0, 0, 0)");
+
+  // The bug this guards: the highlight stayed on every row ever clicked, because the code removed
+  // it by string surgery on a `cssText` the browser had already rewritten.
+  await geology.click();
+  expect(await backgroundOf(page, "Hazards")).toBe(unselected);
+  expect(await backgroundOf(page, "Geology")).toBe(selected);
+  await expect(hazards).toHaveAttribute("aria-selected", "false");
+  await expect(geology).toHaveAttribute("aria-selected", "true");
+});
+
+test("a selected row wears the theme's own highlight pair, the right way round", async ({
+  page,
+}) => {
+  await serveCatalog(page);
+  await waitForMap(page);
+  await openStacPanel(page);
+
+  const hazards = page.getByRole("treeitem", { name: "Hazards" });
+  await hazards.click();
+  const [background, color] = await hazards.evaluate((row) => {
+    const style = getComputedStyle(row);
+    return [style.backgroundColor, style.color];
+  });
+
+  // Resolved from the live theme rather than hard-coded, so this holds in light and dark alike —
+  // and still fails if the pair is swapped, or if only the background is painted.
+  const [primary, foreground] = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    document.body.append(probe);
+    probe.style.background = "hsl(var(--primary))";
+    probe.style.color = "hsl(var(--primary-foreground))";
+    const style = getComputedStyle(probe);
+    const pair = [style.backgroundColor, style.color];
+    probe.remove();
+    return pair;
+  });
+
+  expect(background).toBe(primary);
+  expect(color).toBe(foreground);
+  expect(background).not.toBe(color);
+});
+
+test("depth is indented, and a folder reads its children only when opened", async ({ page }) => {
+  await serveCatalog(page);
+  await waitForMap(page);
+  await openStacPanel(page);
+
+  const topics = page.getByRole("treeitem", { name: "Topics" });
+  await expect(topics).toHaveAttribute("aria-expanded", "false");
+  await topics.click();
+
+  const water = page.getByRole("treeitem", { name: "Water" });
+  await expect(water).toBeVisible();
+  await expect(topics).toHaveAttribute("aria-expanded", "true");
+
+  // Indentation is what makes the nesting readable; a unitless or physical value would leave the
+  // tree flat in the browser while the inline string still looked right.
+  const [parent, child] = await Promise.all([
+    topics.evaluate((row) => getComputedStyle(row).paddingInlineStart),
+    water.evaluate((row) => getComputedStyle(row).paddingInlineStart),
+  ]);
+  expect(parseFloat(child)).toBeGreaterThan(parseFloat(parent));
+});
+
+test("the tree is one tab stop, and the arrows move within it", async ({ page }) => {
+  await serveCatalog(page);
+  await waitForMap(page);
+  await openStacPanel(page);
+
+  const hazards = page.getByRole("treeitem", { name: "Hazards" });
+  await expect(hazards).toBeVisible();
+
+  // Reaching the tree costs one tab, and reaching what follows it costs one more — not one per
+  // row, which on a catalog of hundreds is the difference between usable and not.
+  await page.getByPlaceholder("https://example.org/stac/").focus();
+  const stops: string[] = [];
+  for (let press = 0; press < 6; press += 1) {
+    await page.keyboard.press("Tab");
+    stops.push(
+      await page.evaluate(() => {
+        const active = document.activeElement;
+        return active?.getAttribute("role") === "treeitem"
+          ? `treeitem:${active.textContent}`
+          : (active?.tagName.toLowerCase() ?? "none");
+      }),
+    );
+  }
+  expect(stops.filter((stop) => stop.startsWith("treeitem"))).toHaveLength(1);
+
+  await hazards.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("treeitem", { name: "Geology" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("treeitem", { name: "Topics" })).toBeFocused();
+
+  // Right opens a folder and steps into it; Enter chooses the row it lands on.
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("treeitem", { name: "Topics" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await page.keyboard.press("ArrowRight");
+  const water = page.getByRole("treeitem", { name: "Water" });
+  await expect(water).toBeFocused();
+
+  // Enter chooses, as it does on any button. Ctrl+Enter is the keyboard's double-click, so
+  // searching a collection is reachable without a mouse.
+  await page.keyboard.press("Enter");
+  await expect(water).toHaveAttribute("aria-selected", "true");
+});
