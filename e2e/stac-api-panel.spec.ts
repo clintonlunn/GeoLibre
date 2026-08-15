@@ -143,18 +143,25 @@ test("double-clicking a collection in the list searches it and moves the map", a
 test("connecting to an API after a static catalog clears the tree", async ({ page }) => {
   const searches: string[] = [];
   await serveApi(page, searches);
-  await page.route("https://static.stac.test/**", async (route) =>
-    route.fulfill({
+  await page.route("https://static.stac.test/**", async (route) => {
+    // Clicking a collection reads it, so the child needs a document of its own — answering every
+    // path with the catalog would nest a second copy of the same row under the first.
+    const collection = route.request().url().includes("hazards");
+    await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        type: "Catalog",
-        id: "static",
-        title: "E2E Static",
-        links: [{ rel: "child", href: "./hazards/collection.json", title: "Hazards" }],
-      }),
-    }),
-  );
+      body: JSON.stringify(
+        collection
+          ? { type: "Collection", id: "hazards", links: [] }
+          : {
+              type: "Catalog",
+              id: "static",
+              title: "E2E Static",
+              links: [{ rel: "child", href: "./hazards/collection.json", title: "Hazards" }],
+            },
+      ),
+    });
+  });
   await waitForMap(page);
   await connect(page, "https://static.stac.test/catalog.json");
 

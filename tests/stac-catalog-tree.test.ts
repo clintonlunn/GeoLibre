@@ -66,7 +66,7 @@ test("a row that leaves the selection stops being painted as selected", async ()
     const tree = buildCatalogTree({
       labels: LABELS,
       onError: (message) => assert.fail(`unexpected error: ${message}`),
-      read: async () => assert.fail("a collection must not be opened"),
+      read: async () => ({ kind: "collection", children: [] }),
     });
     tree.reset([node("Hazards", "collection"), node("Geology", "collection")]);
     const [hazards, geology] = rowsOf(tree);
@@ -402,7 +402,7 @@ test("a catalog holding both sub-catalogs and its own items opens and is searcha
   });
 });
 
-test("an empty container says so instead of looking unread", async () => {
+test("an empty node says so, and can still be chosen", async () => {
   await withDom(async () => {
     const read = async (): Promise<StacOpenedNode> => ({ kind: "container", children: [] });
     const tree = buildCatalogTree({ labels: LABELS, onError: () => {}, read });
@@ -415,6 +415,11 @@ test("an empty container says so instead of looking unread", async () => {
     assert.equal(box.textContent, LABELS.empty);
     assert.equal(box.hidden, false);
     assert.equal(box.getAttribute("role"), "group");
+
+    // Nothing to open is not the same as nothing to do: the click that read it also chose it,
+    // so a search can be pointed here.
+    assert.deepEqual(tree.selection(), ["https://example.com/Themes.json"]);
+    assert.equal(themes.getAttribute("aria-selected"), "true");
   });
 });
 
@@ -683,6 +688,68 @@ test("two trees in one document do not claim the same group", async () => {
       rowsOf(tree).map((row) => row.getAttribute("aria-owns")),
     );
     assert.equal(new Set(owned).size, owned.length, "every row owns a group of its own");
+  });
+});
+
+test("choosing a collection is immediate, and reads it once to see what it holds", async () => {
+  await withDom(async () => {
+    // Maxar's events are collections of collections, and the link says only "collection.json".
+    let reads = 0;
+    const read = async (): Promise<StacOpenedNode> => {
+      reads += 1;
+      return { kind: "collection", children: [node("Acquisition", "collection")] };
+    };
+    const tree = buildCatalogTree({ labels: LABELS, onError: () => {}, read });
+    tree.reset([node("Cyclone", "collection")]);
+    const [cyclone] = rowsOf(tree);
+
+    click(cyclone);
+    // Chosen before the read can answer: the network must not stand between a click and its row.
+    assert.deepEqual(tree.selection(), ["https://example.com/Cyclone.json"]);
+
+    await settle();
+    assert.equal(reads, 1);
+    assert.deepEqual(
+      rowsOf(tree).map((row) => row.textContent),
+      ["▾Cyclone", "•Acquisition"],
+      "what it holds is reachable",
+    );
+
+    click(cyclone);
+    await settle();
+    assert.equal(reads, 1, "and it is not read again");
+  });
+});
+
+test("double-clicking a folder that turns out to be a collection still searches it", async () => {
+  await withDom(async () => {
+    const activated: string[] = [];
+    let release: (value: StacOpenedNode) => void = () => {};
+    const read = async (): Promise<StacOpenedNode> =>
+      new Promise<StacOpenedNode>((resolve) => {
+        release = resolve;
+      });
+    const tree = buildCatalogTree({
+      labels: LABELS,
+      onError: () => {},
+      onActivate: (href) => activated.push(href),
+      read,
+    });
+    // The link says nothing, so the row starts as a folder and only the read can settle it.
+    tree.reset([{ href: "https://example.com/maps", title: "Maps", kind: "container" }]);
+    const [maps] = rowsOf(tree);
+
+    // A real double-click is click, click, dblclick — all before a network read can answer.
+    click(maps);
+    click(maps);
+    maps.dispatchEvent(
+      new (globalThis as { Event: typeof Event }).Event("dblclick", { bubbles: true }),
+    );
+    release({ kind: "collection", children: [], items: 2 });
+    await settle();
+
+    assert.deepEqual(activated, ["https://example.com/maps"], "the search was not dropped");
+    assert.deepEqual(tree.selection(), ["https://example.com/maps"]);
   });
 });
 

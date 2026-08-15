@@ -99,6 +99,9 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
   const selected = new Map<HTMLElement, string>();
   // A catalog the user has left must not keep writing into the tree that replaced it.
   let generation = 0;
+  // Asking for a row is asking for the newest one: a request that waited on a slow read must not
+  // land after the user has asked for something else.
+  let asked = 0;
 
   // The tree built every row, so it keeps its own shape rather than reading it back out of the
   // DOM — and the arrows can then move by parent and child instead of by selector.
@@ -170,7 +173,8 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
 
     let kind = node.kind;
     let loaded = false;
-    let busy = false;
+    /** The read in flight, if any: it stands in for a busy flag and can be waited on. */
+    let reading: Promise<void> | undefined;
     let bbox: [number, number, number, number] | undefined;
     if (kind !== "collection") row.setAttribute("aria-expanded", "false");
 
@@ -185,13 +189,18 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     /**
      * Reads what is inside the node: what it turned out to be, what it holds, and where it is.
      * `choose` marks the read a click asked for, since opening a folder with the arrows must not
-     * change what is chosen. A link ending in `collection.json` is believed without reading, so a
-     * click on one costs nothing — every collection in the catalogs this was built against holds
-     * items rather than more collections. The arrows still read it, for the rare one that nests.
+     * change what is chosen. A collection is read too, once, after it has been chosen: its link
+     * says it is a leaf, and a link cannot see the sub-collections a Maxar event turns out to
+     * hold.
      */
-    const reveal = async (choose: boolean, additive: boolean): Promise<void> => {
-      if (busy || loaded) return;
-      busy = true;
+    const reveal = (choose: boolean, additive: boolean): Promise<void> => {
+      if (loaded) return Promise.resolve();
+      // A second gesture joins the read already running rather than starting another.
+      reading ??= readNode(choose, additive);
+      return reading;
+    };
+
+    const readNode = async (choose: boolean, additive: boolean): Promise<void> => {
       glyph.textContent = GLYPH.busy;
       try {
         const opened = await read(node.href, fetch, signal);
@@ -201,20 +210,19 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         loaded = true;
         bbox = opened.bbox;
         for (const child of opened.children) addNode(child, self, depth + 1);
-        // A catalog may link its items directly, with no collection in between. Such a node holds
-        // data of its own, so it can be searched — whether or not it also holds sub-catalogs.
-        if (opened.items) kind = "collection";
+        // A row a search can be pointed at: one carrying its own items, with or without
+        // sub-catalogs, and one with nothing to open at all — including the empty node, which
+        // can then be chosen like any other and simply searches to nothing.
+        if (opened.items || !opened.children.length) kind = "collection";
         if (kind === "collection" && choose) select(node.href, row, additive);
         if (opened.children.length) return expand(true);
-        if (kind === "collection") {
-          glyph.textContent = GLYPH.leaf;
-          row.removeAttribute("aria-expanded");
-          return;
-        }
+        glyph.textContent = GLYPH.leaf;
+        row.removeAttribute("aria-expanded");
+        if (opened.items) return;
         const empty = el("div", labels.empty);
         empty.style.cssText = `${style.empty}padding-inline-start:${16 + depth * 12}px;`;
         childrenBox.append(empty);
-        expand(true);
+        childrenBox.hidden = false;
       } catch (error) {
         if (mine !== generation || signal?.aborted) return;
         glyph.textContent = closedGlyph();
@@ -222,18 +230,19 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         const detail = error instanceof Error ? error.message : String(error);
         onError(`${labels.openFailed}: ${detail}`);
       } finally {
-        busy = false;
+        reading = undefined;
       }
     };
 
     /** What a click or Space means: choose a collection, or open a folder. */
     const activate = (additive: boolean): void => {
-      // Choosing a collection costs no read; only a container has to be opened to be useful.
-      // A collection that turned out to hold collections is both, so it does both — otherwise a
-      // row could be closed and never opened again, its children out of reach.
+      // A collection is chosen at once, without waiting on the network, and read once so that
+      // whatever it holds can be reached: Maxar's events are collections of collections, and a
+      // link alone cannot say so. The search reads the same document moments later.
       if (kind === "collection") {
         select(node.href, row, additive);
-        if (self.children.length) expand(!self.open);
+        if (self.children.length) return expand(!self.open);
+        void reveal(false, additive);
         return;
       }
       if (loaded) return expand(!self.open);
@@ -245,16 +254,22 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
       activate(event.ctrlKey || event.metaKey);
     });
 
-    /** "Show me this one": pick the collection if it is not picked, then ask for its items. */
-    const show = (): void => {
-      if (kind !== "collection") return;
+    /**
+     * "Show me this one": pick the collection if it is not picked, then ask for its items. The
+     * clicks of a double-click land before it, so a row still being read is waited for — without
+     * that, double-clicking a folder that turns out to be a collection searches nothing.
+     */
+    const show = async (): Promise<void> => {
+      const mine = ++asked;
+      await reading;
+      if (mine !== asked || kind !== "collection") return;
       if (!selected.has(row)) select(node.href, row, false);
       onActivate?.(node.href, bbox);
     };
 
     // The second click of a double-click would otherwise toggle the choice back off, so the
     // selection is restored before the search is asked for.
-    row.addEventListener("dblclick", show);
+    row.addEventListener("dblclick", () => void show());
 
     // The arrows walk the tree and work its folders. Enter and Space are left to the button the
     // row is written on, which already chooses; asking for the items takes the modifier.
@@ -266,17 +281,24 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
       const steps: Record<string, () => void> = {
         ArrowDown: () => step(1),
         ArrowUp: () => step(-1),
-        // Opening a folder is navigation, not a choice: it must not disturb what is chosen.
+        // Opening a folder is navigation, not a choice: it must not disturb what is chosen, and
+        // it believes a `collection.json` link exactly as a click does rather than reading a row
+        // per arrow press.
         ArrowRight: () => {
           if (self.open) return focusRow(self.children[0]);
-          if (!loaded) return void reveal(false, false);
-          if (self.children.length) expand(true);
+          if (loaded) return void (self.children.length && expand(true));
+          void reveal(false, false);
         },
         ArrowLeft: () => {
           if (self.open) return expand(false);
           focusRow(self.parent);
         },
-        "Ctrl+Enter": () => (kind === "collection" ? show() : activate(false)),
+        // Ctrl+Enter means "show me this one" whatever the row turns out to be: a container is
+        // read first, and searched if that read reveals a collection.
+        "Ctrl+Enter": () => {
+          if (kind !== "collection" && !loaded) activate(false);
+          void show();
+        },
         Home: () => focusRow(reachable()[0]),
         End: () => focusRow(reachable().at(-1)),
       };
