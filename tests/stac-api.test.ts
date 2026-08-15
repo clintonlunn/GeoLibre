@@ -324,6 +324,9 @@ test("openCatalogNode reports a collection's extent, and ignores a malformed one
     empty: { spatial: { bbox: [] } },
     words: { spatial: { bbox: [["west", "south", "east", "north"]] } },
     short: { spatial: { bbox: [[-114, 37]] } },
+    // Half of five is not an index: the middle of an odd box is a coordinate that does not exist.
+    odd: { spatial: { bbox: [[-114, 37, 0, -109, 42]] } },
+    infinite: { spatial: { bbox: [[-114, 37, Number.POSITIVE_INFINITY, 42]] } },
     temporalOnly: { temporal: { interval: [["2024-01-01T00:00:00Z", null]] } },
     notAnObject: "everywhere",
   };
@@ -337,7 +340,7 @@ test("openCatalogNode reports a collection's extent, and ignores a malformed one
 
   assert.deepEqual(await bboxOf("good"), [-114, 37, -109, 42]);
   assert.deepEqual(await bboxOf("deep"), [-114, 37, -109, 42]);
-  for (const key of ["empty", "words", "short", "temporalOnly", "notAnObject"]) {
+  for (const key of ["empty", "words", "short", "odd", "infinite", "temporalOnly", "notAnObject"]) {
     assert.equal(await bboxOf(key), undefined, `${key} is not an extent the map can be sent to`);
   }
 });

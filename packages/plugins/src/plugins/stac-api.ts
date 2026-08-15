@@ -234,6 +234,18 @@ function catalogChildren(document: Record<string, unknown>, base: string): StacC
     );
 }
 
+/**
+ * The horizontal corners of a STAC bounding box, which carries elevation in its middle when it
+ * has any: four numbers or six, never an odd count — half of five is not an index.
+ */
+export function horizontalBbox(values: unknown): [number, number, number, number] | undefined {
+  if (!Array.isArray(values) || values.length < 4 || values.length % 2 !== 0) return undefined;
+  if (!values.every((value) => typeof value === "number" && Number.isFinite(value)))
+    return undefined;
+  const half = values.length / 2;
+  return [values[0], values[1], values[half], values[half + 1]];
+}
+
 /** The first spatial extent a collection declares, which covers the rest. */
 function collectionBbox(
   document: Record<string, unknown>,
@@ -243,11 +255,7 @@ function collectionBbox(
   const spatial = extent.spatial;
   if (typeof spatial !== "object" || spatial === null || !("bbox" in spatial)) return undefined;
   const boxes = spatial.bbox;
-  const box = Array.isArray(boxes) ? boxes[0] : undefined;
-  if (!Array.isArray(box) || box.length < 4 || !box.every((value) => typeof value === "number")) {
-    return undefined;
-  }
-  return [box[0], box[1], box[box.length / 2], box[box.length / 2 + 1]];
+  return horizontalBbox(Array.isArray(boxes) ? boxes[0] : undefined);
 }
 
 export async function openCatalogNode(
@@ -526,15 +534,7 @@ export async function searchStaticStac(
 }
 
 export function itemBbox(item: StacItem): [number, number, number, number] | undefined {
-  if (item.bbox?.length && item.bbox.length >= 4) {
-    return [
-      item.bbox[0],
-      item.bbox[1],
-      item.bbox[item.bbox.length / 2],
-      item.bbox[item.bbox.length / 2 + 1],
-    ];
-  }
-  return undefined;
+  return horizontalBbox(item.bbox);
 }
 
 export function isVisualizableAsset(asset: StacAsset): boolean {

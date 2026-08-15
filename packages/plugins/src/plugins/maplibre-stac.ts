@@ -5,6 +5,7 @@ import type { GeoJSONSource, MapMouseEvent, Map as MapLibreMap } from "maplibre-
 import type { GeoLibreAppAPI, GeoLibreCogLayerOptions, GeoLibrePlugin } from "../types";
 import {
   connectStac,
+  horizontalBbox,
   isVisualizableAsset,
   itemBbox,
   loadStacIndex,
@@ -878,11 +879,9 @@ function buildPanel(container: HTMLElement): () => void {
   collectionSelect.addEventListener("dblclick", () => {
     const chosen = collectionSelect.selectedOptions[0]?.value;
     const extent = connection?.collections.find((collection) => collection.id === chosen)?.extent;
-    const box = extent?.spatial?.bbox?.[0];
+    const box = horizontalBbox(extent?.spatial?.bbox?.[0]);
     void runSearch(false);
-    if (box && box.length >= 4) {
-      appRef?.fitBounds?.([box[0], box[1], box[box.length / 2], box[box.length / 2 + 1]]);
-    }
+    if (box) appRef?.fitBounds?.(box);
   });
 
   /** The tree asked for a collection: search it, and send the map to it. */
