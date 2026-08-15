@@ -113,6 +113,11 @@ test("double-clicking a collection in the list searches it and moves the map", a
     const text = (await page.locator("footer, [class*=status]").first().textContent()) ?? "";
     return /BBox:[^A-Z]*/.exec(text)?.[0] ?? "";
   };
+  const bounds = async (): Promise<number[]> => {
+    const text = (await page.locator("footer, [class*=status]").first().textContent()) ?? "";
+    const found = /BBox: (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)/.exec(text);
+    return found ? found.slice(1, 5).map(Number) : [];
+  };
   const before = await view();
   const landsat = page.getByRole("option", { name: "Landsat 9" });
   await landsat.click();
@@ -124,6 +129,15 @@ test("double-clicking a collection in the list searches it and moves the map", a
   expect(searches.at(-1)).toBe(JSON.stringify(["landsat-9"]));
 
   await expect.poll(async () => await view(), { timeout: 10_000 }).not.toBe(before);
+
+  // Landsat's extent, not the items': the fixture returns items over Belgium precisely so a fit
+  // to the results would fail this.
+  const [west, south, east, north] = await bounds();
+  expect(west).toBeLessThanOrEqual(-114);
+  expect(east).toBeGreaterThanOrEqual(-109);
+  expect(south).toBeLessThanOrEqual(37);
+  expect(north).toBeGreaterThanOrEqual(42);
+  expect(east - west).toBeLessThan(60);
 });
 
 test("connecting to an API after a static catalog clears the tree", async ({ page }) => {

@@ -24,6 +24,34 @@ const DOCUMENTS: Record<string, unknown> = {
     id: "topics",
     links: [{ rel: "child", href: "./water/collection.json", title: "Water" }],
   },
+  "https://stac.test/geology/collection.json": {
+    type: "Collection",
+    id: "geology",
+    extent: { spatial: { bbox: [[-112, 39, -111, 40]] } },
+    links: [{ rel: "item", href: "./outcrop.json" }],
+  },
+  "https://stac.test/geology/outcrop.json": {
+    type: "Feature",
+    stac_version: "1.0.0",
+    id: "outcrop",
+    collection: "geology",
+    bbox: [-112, 39, -111, 40],
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-112, 39],
+          [-111, 39],
+          [-111, 40],
+          [-112, 40],
+          [-112, 39],
+        ],
+      ],
+    },
+    properties: { datetime: "2024-05-01T00:00:00Z" },
+    assets: {},
+    links: [],
+  },
   "https://stac.test/hazards/collection.json": {
     type: "Collection",
     id: "hazards",
@@ -55,8 +83,9 @@ const DOCUMENTS: Record<string, unknown> = {
 };
 
 /** Serves the fixture catalog, so the suite needs no network and no third-party catalog. */
-async function serveCatalog(page: Page): Promise<void> {
+async function serveCatalog(page: Page, asked: string[] = []): Promise<void> {
   await page.route("https://stac.test/**", async (route) => {
+    asked.push(route.request().url());
     const document = DOCUMENTS[route.request().url()];
     if (!document) {
       await route.fulfill({ status: 404, body: "not found" });
@@ -80,6 +109,13 @@ async function openStacPanel(page: Page): Promise<void> {
 
 const backgroundOf = (page: Page, name: string) =>
   page.getByRole("treeitem", { name }).evaluate((row) => getComputedStyle(row).backgroundColor);
+
+/** The map's own bounds, as the status bar reports them: west, south, east, north. */
+async function mapBounds(page: Page): Promise<number[]> {
+  const text = (await page.locator("footer, [class*=status]").first().textContent()) ?? "";
+  const found = /BBox: (-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)/.exec(text);
+  return found ? found.slice(1, 5).map(Number) : [];
+}
 
 test("the tree paints the selection, and lets go of it", async ({ page }) => {
   await serveCatalog(page);
@@ -228,4 +264,52 @@ test("Ctrl+Enter on a collection searches it and takes the map to it", async ({ 
   await expect(page.getByText("Showing 1 of 1 items.")).toBeVisible({ timeout: 15_000 });
   await expect(hazards).toHaveAttribute("aria-selected", "true");
   await expect.poll(view, { timeout: 15_000 }).not.toBe(before);
+
+  // The collection's extent, not the item's: the item sits at -113..-112, so a fit to the item
+  // would pass a "the view moved" check while missing what was asked for.
+  const [west, south, east, north] = await mapBounds(page);
+  expect(west).toBeLessThanOrEqual(-114);
+  expect(east).toBeGreaterThanOrEqual(-109);
+  expect(south).toBeLessThanOrEqual(37);
+  expect(north).toBeGreaterThanOrEqual(42);
+  expect(east - west).toBeLessThan(30);
+});
+
+test("Ctrl-click adds a second collection, and Meta+Enter searches like Ctrl does", async ({
+  page,
+}) => {
+  await serveCatalog(page);
+  await waitForMap(page);
+  await openStacPanel(page);
+  await page.getByLabel("Limit search to the current map extent").uncheck();
+
+  const hazards = page.getByRole("treeitem", { name: "Hazards" });
+  const geology = page.getByRole("treeitem", { name: "Geology" });
+  await hazards.click();
+  await geology.click({ modifiers: ["ControlOrMeta"] });
+
+  // Both stay chosen: the modifier adds rather than replaces.
+  await expect(hazards).toHaveAttribute("aria-selected", "true");
+  await expect(geology).toHaveAttribute("aria-selected", "true");
+
+  // Ctrl/Cmd+Enter asks for both, since both are chosen.
+  await hazards.focus();
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(page.getByText("Showing 2 of 2 items.")).toBeVisible({ timeout: 15_000 });
+});
+
+test("a folder is not read until it is opened", async ({ page }) => {
+  const asked: string[] = [];
+  await serveCatalog(page, asked);
+  await waitForMap(page);
+  await openStacPanel(page);
+
+  const topics = page.getByRole("treeitem", { name: "Topics" });
+  await expect(topics).toBeVisible();
+  // Connecting reads the root and nothing else; an eager walk would have this already.
+  expect(asked.filter((url) => url.includes("topics/catalog.json"))).toHaveLength(0);
+
+  await topics.click();
+  await expect(page.getByRole("treeitem", { name: "Water" })).toBeVisible();
+  expect(asked.filter((url) => url.includes("topics/catalog.json"))).toHaveLength(1);
 });
