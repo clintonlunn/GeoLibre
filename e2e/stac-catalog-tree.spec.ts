@@ -333,8 +333,21 @@ test("asking for a second collection wins, however slowly the first one answers"
   await page.keyboard.press("ControlOrMeta+Enter");
 
   await expect(page.getByText("Showing 1 of 1 items.")).toBeVisible({ timeout: 15_000 });
-  await page.waitForTimeout(4000);
-  const [west, , east] = await mapBounds(page);
+
+  // Watch until the view stops changing, and never before the late answer has had its chance: a
+  // fixed sleep would either race the delay or pad every run to hide it.
+  const settled = async (): Promise<number[]> => {
+    const deadline = Date.now() + 4000;
+    let previous = await mapBounds(page);
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await page.waitForTimeout(400);
+      const next = await mapBounds(page);
+      if (Date.now() > deadline && next.join() === previous.join()) return next;
+      previous = next;
+    }
+    return previous;
+  };
+  const [west, , east] = await settled();
   expect(east - west).toBeLessThan(4);
   expect(west).toBeGreaterThan(-114);
 });
