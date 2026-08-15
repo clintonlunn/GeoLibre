@@ -329,7 +329,10 @@ function inTime(item: StacItem, interval?: string): boolean {
 
 /** Searches a static catalog by following child/item links, with a hard safety cap. */
 /** Queued but unread; the root arrives already read. */
-type Unread = { url: string; document?: Record<string, unknown> };
+type Unread = { url: string; document?: Record<string, unknown>; retried?: boolean };
+
+/** A read about to happen, and the queue it came out of, so a failure can go back there. */
+type Pending = { entry: Unread; from: Unread[] };
 
 export async function searchStaticStac(
   connection: StacConnection,
@@ -356,25 +359,42 @@ export async function searchStaticStac(
     return inTime(item, options.datetime);
   };
 
-  const takeBatch = (): Unread[] => {
+  const takeBatch = (): Pending[] => {
     const room = Math.min(
       STATIC_SEARCH_CONCURRENCY,
       limit - found.length,
       STATIC_SEARCH_READS_PER_PAGE - reads,
     );
-    const batch: Unread[] = [];
+    const batch: Pending[] = [];
     while (batch.length < room && (walk.items.length || walk.folders.length)) {
-      const entry = (walk.items.length ? walk.items : walk.folders).shift()!;
+      const from = walk.items.length ? walk.items : walk.folders;
+      const entry = from.shift()!;
       if (walk.visited.has(entry.url)) continue;
       walk.visited.add(entry.url);
-      batch.push(entry);
+      batch.push({ entry, from });
     }
     return batch;
   };
 
-  const read = async (entry: Unread): Promise<Record<string, unknown>> =>
-    entry.document ??
-    fetchJson<Record<string, unknown>>(entry.url, { signal: options.signal }, fetcher);
+  /**
+   * A batch leaves its queue before the requests go out, so a failed read has to put the entry
+   * back or it is lost, and a folder takes its subtree with it. Twice failed is dropped.
+   */
+  const read = async ({ entry, from }: Pending): Promise<Record<string, unknown> | undefined> => {
+    if (entry.document) return entry.document;
+    try {
+      return await fetchJson<Record<string, unknown>>(
+        entry.url,
+        { signal: options.signal },
+        fetcher,
+      );
+    } catch {
+      if (entry.retried) return undefined;
+      walk.visited.delete(entry.url);
+      from.unshift({ url: entry.url, retried: true });
+      return undefined;
+    }
+  };
 
   const collect = (document: Record<string, unknown>, url: string): void => {
     if (document.type !== "Feature") {
@@ -394,7 +414,9 @@ export async function searchStaticStac(
     if (!batch.length) break;
     reads += batch.length;
     const documents = await Promise.all(batch.map(read));
-    documents.forEach((document, index) => collect(document, batch[index].url));
+    documents.forEach((document, index) => {
+      if (document) collect(document, batch[index].entry.url);
+    });
   }
 
   const offset = walk.offset + found.length;
