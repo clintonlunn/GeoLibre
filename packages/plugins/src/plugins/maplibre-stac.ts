@@ -249,7 +249,8 @@ const style = {
   // the controls above it scroll as a group rather than pushing it off-panel.
   results:
     "display:flex;flex:1 1 auto;min-height:150px;overflow:auto;flex-direction:column;gap:7px;",
-  controls: "display:flex;flex-direction:column;gap:10px;flex:0 1 auto;min-height:0;overflow:auto;",
+  controls:
+    "display:flex;flex-direction:column;gap:10px;flex:0 1 auto;min-height:180px;overflow:auto;",
   card:
     "display:flex;flex-direction:column;gap:5px;padding:8px;border:1px solid hsl(var(--border));" +
     "border-radius:7px;background:hsl(var(--muted));",

@@ -289,7 +289,97 @@ test("searchStaticStac pages through a catalog holding more items than one page 
   const third = await searchStaticStac(connection, { limit: 10, cursor: second.cursor }, fetcher);
   assert.equal(third.items.length, 5);
   assert.equal(third.cursor, undefined, "the walk is done, so there is nothing to resume");
-  assert.equal(third.matched, 5);
+  assert.equal(third.matched, 25);
+});
+
+test("searchStaticStac reads items before folders, so a page is not spent on structure", async () => {
+  // Items one folder down, behind a hundred empty ones. Discovery order spends the page on
+  // folders and returns nothing.
+  const docs: Record<string, unknown> = {
+    "https://example.com/stac/catalog.json": {
+      type: "Catalog",
+      links: [
+        { rel: "child", href: "./has-items.json" },
+        ...Array.from({ length: 100 }, (_value, index) => ({
+          rel: "child",
+          href: `./empty${index}.json`,
+        })),
+      ],
+    },
+    "https://example.com/stac/has-items.json": {
+      type: "Catalog",
+      links: Array.from({ length: 3 }, (_value, index) => ({
+        rel: "item",
+        href: `./item${index}.json`,
+      })),
+    },
+  };
+  for (let index = 0; index < 100; index += 1) {
+    docs[`https://example.com/stac/empty${index}.json`] = { type: "Catalog", links: [] };
+  }
+  for (let index = 0; index < 3; index += 1) {
+    docs[`https://example.com/stac/item${index}.json`] = {
+      type: "Feature",
+      id: `item${index}`,
+      collection: "c",
+      bbox: [0, 0, 1, 1],
+      geometry: null,
+      properties: { datetime: "2024-05-01T00:00:00Z" },
+      assets: {},
+    };
+  }
+  let reads = 0;
+  const fetcher = (async (input: RequestInfo | URL) => {
+    reads += 1;
+    return jsonResponse(docs[String(input)]);
+  }) as typeof fetch;
+
+  const result = await searchStaticStac(
+    {
+      url: "https://example.com/stac/catalog.json",
+      title: "Static",
+      isApi: false,
+      collections: [],
+      root: docs["https://example.com/stac/catalog.json"] as Record<string, unknown>,
+    },
+    { limit: 3 },
+    fetcher,
+  );
+
+  assert.equal(result.items.length, 3);
+  // Discovery order costs a hundred more.
+  assert.ok(reads < 30, `expected the items to be reached quickly, took ${reads} reads`);
+});
+
+test("a page stops reading at its budget rather than crawling the whole catalog", async () => {
+  // No items anywhere, so only the budget can end the page.
+  let reads = 0;
+  const fetcher = (async () => {
+    reads += 1;
+    return jsonResponse({
+      type: "Catalog",
+      links: [
+        { rel: "child", href: `./${reads}-a.json` },
+        { rel: "child", href: `./${reads}-b.json` },
+      ],
+    });
+  }) as typeof fetch;
+
+  const result = await searchStaticStac(
+    {
+      url: "https://example.com/stac/catalog.json",
+      title: "Static",
+      isApi: false,
+      collections: [],
+      root: { type: "Catalog", links: [{ rel: "child", href: "./a.json" }] },
+    },
+    { limit: 20 },
+    fetcher,
+  );
+
+  assert.deepEqual(result.items, []);
+  assert.ok(reads <= 300, `a page must stop at its budget, read ${reads}`);
+  assert.ok(result.cursor, "and report that the walk is unfinished");
 });
 
 test("asset and bbox helpers recognize common STAC data", () => {
