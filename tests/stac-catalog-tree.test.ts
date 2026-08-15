@@ -538,6 +538,23 @@ test("Ctrl+Enter asks for a collection's items, the way a double-click does", as
   });
 });
 
+test("holding a modifier does not stop the arrows walking the tree", async () => {
+  await withDom(async () => {
+    const tree = buildCatalogTree({ labels: LABELS, onError: () => {} });
+    tree.reset([node("Hazards", "collection"), node("Geology", "collection")]);
+    const [hazards] = rowsOf(tree);
+    const stops = (): Array<string | null> =>
+      rowsOf(tree).map((row) => row.getAttribute("tabindex"));
+
+    // Ctrl+Enter is the one combination that means something else; every other key keeps its
+    // meaning, rather than being swallowed by a lookup that only knows about Enter.
+    press(hazards, "ArrowDown", true);
+    assert.deepEqual(stops(), ["-1", "0"]);
+    press(rowsOf(tree)[1], "Home", true);
+    assert.deepEqual(stops(), ["0", "-1"]);
+  });
+});
+
 test("reset drops the previous catalog's rows and selection", async () => {
   await withDom(async () => {
     const tree = buildCatalogTree({ labels: LABELS, onError: () => {} });

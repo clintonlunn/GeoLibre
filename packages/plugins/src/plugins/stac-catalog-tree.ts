@@ -181,11 +181,12 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     };
 
     /**
-     * Reads what is inside the node, and chooses it if it turns out to be a collection after all.
-     * A link ending in `collection.json` is taken at its word and never read for children: every
-     * collection in the catalogs this was built against holds items, not more collections, and a
-     * read per row to prove that is a cost with nothing to show for it. A collection that does
-     * nest is still searched whole — only its shape stays out of the tree.
+     * Reads what is inside the node, and chooses it if it turns out to be a collection after all
+     * — one that nests still shows what it holds, since the read has already been paid for.
+     * A link ending in `collection.json` is taken at its word and never read: every collection in
+     * the catalogs this was built against holds items rather than more collections, so a read per
+     * row to prove it would cost a request each and show nothing. Such a collection is still
+     * searched whole; only its shape stays out of the tree.
      */
     const reveal = async (additive: boolean): Promise<void> => {
       if (busy || loaded) return;
@@ -268,7 +269,10 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         Home: () => focusRow(reachable()[0]),
         End: () => focusRow(reachable().at(-1)),
       };
-      const take = steps[event.ctrlKey || event.metaKey ? `Ctrl+${event.key}` : event.key];
+      // A modifier only changes what a key means when there is something for it to mean; holding
+      // Ctrl while arrowing should still walk the tree rather than swallow the press.
+      const held = event.ctrlKey || event.metaKey;
+      const take = (held ? steps[`Ctrl+${event.key}`] : undefined) ?? steps[event.key];
       if (!take) return;
       event.preventDefault();
       take();
