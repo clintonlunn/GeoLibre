@@ -95,6 +95,8 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
   const selected = new Map<HTMLElement, string>();
   // A catalog the user has left must not keep writing into the tree that replaced it.
   let generation = 0;
+  // Ties each row to the group it opens, which the markup cannot: the group is its sibling.
+  let rowCount = 0;
 
   // The tree built every row, so it keeps its own shape rather than reading it back out of the
   // DOM — and the arrows can then move by parent and child instead of by selector.
@@ -148,6 +150,7 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     row.style.paddingInlineStart = `${4 + depth * 12}px`;
     row.setAttribute("role", "treeitem");
     row.setAttribute("aria-selected", "false");
+    row.setAttribute("aria-level", String(depth + 1));
     row.tabIndex = roots.length ? -1 : 0;
     const glyph = el("span", node.kind === "collection" ? GLYPH.leaf : closedGlyph());
     glyph.style.cssText = style.glyph;
@@ -155,6 +158,9 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     const childrenBox = el("div");
     childrenBox.hidden = true;
     childrenBox.setAttribute("role", "group");
+    rowCount += 1;
+    childrenBox.id = `${ROW_CLASS}-group-${rowCount}`;
+    row.setAttribute("aria-owns", childrenBox.id);
     (parent?.box ?? element).append(row, childrenBox);
 
     const self: Row = { element: row, box: childrenBox, parent, children: [], open: false };
