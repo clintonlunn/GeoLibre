@@ -887,10 +887,15 @@ function buildPanel(container: HTMLElement): () => void {
   /** The tree asked for a collection: search it, and send the map to it. */
   function showCollection(href: string, bbox?: [number, number, number, number]): void {
     void runSearch(false);
+    // The search this belongs to. Asking for a second collection while the first extent is still
+    // in flight would otherwise send the map where the user no longer is.
+    const generation = searchGeneration;
     if (bbox) return void appRef?.fitBounds?.(bbox);
     // A collection guessed from its link has never been read, so its extent has to be fetched.
     void openCatalogNode(href, fetch, controller.signal)
-      .then((node) => node.bbox && appRef?.fitBounds?.(node.bbox))
+      .then((node) => {
+        if (generation === searchGeneration && node.bbox) appRef?.fitBounds?.(node.bbox);
+      })
       .catch(() => undefined);
   }
 

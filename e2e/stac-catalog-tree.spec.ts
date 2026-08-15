@@ -83,9 +83,12 @@ const DOCUMENTS: Record<string, unknown> = {
 };
 
 /** Serves the fixture catalog, so the suite needs no network and no third-party catalog. */
-async function serveCatalog(page: Page, asked: string[] = []): Promise<void> {
+async function serveCatalog(page: Page, asked: string[] = [], slow?: string): Promise<void> {
   await page.route("https://stac.test/**", async (route) => {
-    asked.push(route.request().url());
+    const url = route.request().url();
+    asked.push(url);
+    // A document that answers late, so a race can be staged rather than hoped for.
+    if (slow && url.includes(slow)) await new Promise((resolve) => setTimeout(resolve, 2500));
     const document = DOCUMENTS[route.request().url()];
     if (!document) {
       await route.fulfill({ status: 404, body: "not found" });
@@ -312,4 +315,26 @@ test("a folder is not read until it is opened", async ({ page }) => {
   await topics.click();
   await expect(page.getByRole("treeitem", { name: "Water" })).toBeVisible();
   expect(asked.filter((url) => url.includes("topics/catalog.json"))).toHaveLength(1);
+});
+
+test("asking for a second collection wins, however slowly the first one answers", async ({
+  page,
+}) => {
+  await serveCatalog(page, [], "hazards/collection.json");
+  await waitForMap(page);
+  await openStacPanel(page);
+  await page.getByLabel("Limit search to the current map extent").uncheck();
+
+  // Hazards spans -114..-109; Geology sits inside it at -112..-111. Hazards' extent arrives late,
+  // so a fit that ignores which search it belongs to would drag the map back out to the wider box.
+  await page.getByRole("treeitem", { name: "Hazards" }).click();
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.getByRole("treeitem", { name: "Geology" }).click();
+  await page.keyboard.press("ControlOrMeta+Enter");
+
+  await expect(page.getByText("Showing 1 of 1 items.")).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(4000);
+  const [west, , east] = await mapBounds(page);
+  expect(east - west).toBeLessThan(4);
+  expect(west).toBeGreaterThan(-114);
 });
