@@ -3210,6 +3210,10 @@ export function LayerPanel({
                     aria-pressed={selectedLayerIds.has(layer.id)}
                     onClick={(e) => handleLayerSelection(e, layer.id)}
                     onKeyDown={(e) => {
+                      // Only act on the card itself: preventDefault here would
+                      // otherwise cancel the Enter activation of the action
+                      // buttons nested inside it.
+                      if (e.target !== e.currentTarget) return;
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         setSelectedLayerIds(new Set([layer.id]));
@@ -3389,7 +3393,7 @@ export function LayerPanel({
                         onChange={(v) => setLayerOpacity(layer.id, v)}
                       />
                     )}
-                    <div className="mt-2 flex gap-1">
+                    <div className="mt-2 flex flex-wrap gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
@@ -3449,6 +3453,22 @@ export function LayerPanel({
                       >
                         <MousePointerClick className="h-3.5 w-3.5" />
                       </Button>
+                      {onOpenStylePanel && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title={t("layers.openStylePanel")}
+                          aria-label={t("layers.openStylePanel")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectLayer(layer.id);
+                            onOpenStylePanel();
+                          }}
+                        >
+                          <Palette className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
