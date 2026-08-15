@@ -41,6 +41,10 @@ const style = {
 
 const GLYPH = { open: "▾", leaf: "•", busy: "…" } as const;
 
+// Ties each row to the group it opens, which the markup cannot: the group is its sibling. Counted
+// per document rather than per tree, so two trees cannot mint the same id.
+let groupCount = 0;
+
 /** A closed folder points the way the text runs, so it mirrors with the rest of the UI. */
 function closedGlyph(): string {
   return typeof document !== "undefined" && document.documentElement.dir === "rtl" ? "◂" : "▸";
@@ -95,8 +99,6 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
   const selected = new Map<HTMLElement, string>();
   // A catalog the user has left must not keep writing into the tree that replaced it.
   let generation = 0;
-  // Ties each row to the group it opens, which the markup cannot: the group is its sibling.
-  let rowCount = 0;
 
   // The tree built every row, so it keeps its own shape rather than reading it back out of the
   // DOM — and the arrows can then move by parent and child instead of by selector.
@@ -158,8 +160,8 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     const childrenBox = el("div");
     childrenBox.hidden = true;
     childrenBox.setAttribute("role", "group");
-    rowCount += 1;
-    childrenBox.id = `${ROW_CLASS}-group-${rowCount}`;
+    groupCount += 1;
+    childrenBox.id = `${ROW_CLASS}-group-${groupCount}`;
     row.setAttribute("aria-owns", childrenBox.id);
     (parent?.box ?? element).append(row, childrenBox);
 
@@ -181,12 +183,11 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     };
 
     /**
-     * Reads what is inside the node, and chooses it if it turns out to be a collection after all
-     * — one that nests still shows what it holds, since the read has already been paid for.
-     * A link ending in `collection.json` is taken at its word and never read: every collection in
-     * the catalogs this was built against holds items rather than more collections, so a read per
-     * row to prove it would cost a request each and show nothing. Such a collection is still
-     * searched whole; only its shape stays out of the tree.
+     * Reads what is inside the node: what it turned out to be, what it holds, and where it is.
+     * `choose` marks the read a click asked for, since opening a folder with the arrows must not
+     * change what is chosen. A link ending in `collection.json` is believed without reading, so a
+     * click on one costs nothing — every collection in the catalogs this was built against holds
+     * items rather than more collections. The arrows still read it, for the rare one that nests.
      */
     const reveal = async (choose: boolean, additive: boolean): Promise<void> => {
       if (busy || loaded) return;
@@ -201,8 +202,8 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         bbox = opened.bbox;
         for (const child of opened.children) addNode(child, self, depth + 1);
         // A catalog may link its items directly, with no collection in between. Such a node holds
-        // data and has nothing to open, so it is a leaf to search rather than an empty folder.
-        if (!opened.children.length && opened.items) kind = "collection";
+        // data of its own, so it can be searched — whether or not it also holds sub-catalogs.
+        if (opened.items) kind = "collection";
         if (kind === "collection" && choose) select(node.href, row, additive);
         if (opened.children.length) return expand(true);
         if (kind === "collection") {

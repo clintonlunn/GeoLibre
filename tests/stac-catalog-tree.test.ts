@@ -374,6 +374,34 @@ test("a catalog that carries its own items is a leaf to search, not an empty fol
   });
 });
 
+test("a catalog holding both sub-catalogs and its own items opens and is searchable", async () => {
+  await withDom(async () => {
+    // Neither half cancels the other: its children are worth browsing, and its own items are
+    // worth searching, so scoping a search here must not quietly leave them out.
+    const read = async (): Promise<StacOpenedNode> => ({
+      kind: "container",
+      children: [node("Quads", "collection")],
+      items: 3,
+    });
+    const tree = buildCatalogTree({ labels: LABELS, onError: () => {}, read });
+    tree.reset([node("Mapping")]);
+    const [mapping] = rowsOf(tree);
+
+    click(mapping);
+    await settle();
+    assert.equal((mapping.nextElementSibling as HTMLElement).hidden, false, "its children show");
+    assert.deepEqual(
+      tree.selection(),
+      ["https://example.com/Mapping.json"],
+      "and it can be searched itself",
+    );
+    assert.deepEqual(
+      rowsOf(tree).map((row) => row.textContent),
+      ["▾Mapping", "•Quads"],
+    );
+  });
+});
+
 test("an empty container says so instead of looking unread", async () => {
   await withDom(async () => {
     const read = async (): Promise<StacOpenedNode> => ({ kind: "container", children: [] });
@@ -640,6 +668,21 @@ test("opening a folder with the arrows leaves the selection alone", async () => 
     await settle();
     assert.equal(topics.getAttribute("aria-expanded"), "true");
     assert.equal(tree.selection().length, 2);
+  });
+});
+
+test("two trees in one document do not claim the same group", async () => {
+  await withDom(async () => {
+    // `aria-owns` points at an id; if two trees mint the same one, it points at either.
+    const first = buildCatalogTree({ labels: LABELS, onError: () => {} });
+    const second = buildCatalogTree({ labels: LABELS, onError: () => {} });
+    first.reset([node("Themes"), node("Topics")]);
+    second.reset([node("Themes"), node("Topics")]);
+
+    const owned = [first, second].flatMap((tree) =>
+      rowsOf(tree).map((row) => row.getAttribute("aria-owns")),
+    );
+    assert.equal(new Set(owned).size, owned.length, "every row owns a group of its own");
   });
 });
 
