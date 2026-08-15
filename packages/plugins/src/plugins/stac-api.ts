@@ -60,7 +60,7 @@ export interface StacConnection {
 }
 
 /** A walk in progress; hand it back to continue. Mutated in place rather than copied. */
-export interface StacWalkCursor {
+export interface StacSearchCursor {
   items: Unread[];
   folders: Unread[];
   visited: Set<string>;
@@ -72,7 +72,7 @@ export interface StacSearchOptions {
   bbox?: [number, number, number, number];
   datetime?: string;
   collections?: string[];
-  cursor?: StacWalkCursor;
+  cursor?: StacSearchCursor;
   /** Additional STAC API Item Search members such as query, filter, sortby, or fields. */
   additional?: Record<string, unknown>;
   limit?: number;
@@ -89,7 +89,7 @@ export interface StacNextPage {
 export interface StacSearchResult {
   items: StacItem[];
   next?: StacNextPage;
-  cursor?: StacWalkCursor;
+  cursor?: StacSearchCursor;
   matched?: number;
 }
 

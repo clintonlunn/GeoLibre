@@ -16,7 +16,7 @@ import {
   type StacItem,
   type StacNextPage,
   type StacSearchResult,
-  type StacWalkCursor,
+  type StacSearchCursor,
 } from "./stac-api";
 
 export const STAC_PLUGIN_ID = "geolibre-stac-catalogs";
@@ -666,7 +666,7 @@ function buildPanel(container: HTMLElement): () => void {
   let filtered: StacIndexCatalog[] = [];
   let connection: StacConnection | null = null;
   let nextPage: StacNextPage | undefined;
-  let walkCursor: StacWalkCursor | undefined;
+  let searchCursor: StacSearchCursor | undefined;
   let allItems: StacItem[] = [];
   let searchGeneration = 0;
   let cancelDraw: (() => void) | null = null;
@@ -720,7 +720,7 @@ function buildPanel(container: HTMLElement): () => void {
     searchGeneration += 1;
     allItems = [];
     nextPage = undefined;
-    walkCursor = undefined;
+    searchCursor = undefined;
     results.innerHTML = "";
     cardsByItemId.clear();
     selectItem(null, false);
@@ -862,7 +862,7 @@ function buildPanel(container: HTMLElement): () => void {
   };
 
   const searchStatus = (append: boolean, result: StacSearchResult): string => {
-    if (append && !result.items.length && walkCursor) return labels.noNewItems;
+    if (append && !result.items.length && searchCursor) return labels.noNewItems;
     if (!allItems.length) return labels.noResults;
     if (result.matched) return labels.showingOfMatched(allItems.length, result.matched);
     return labels.showing(allItems.length);
@@ -888,7 +888,7 @@ function buildPanel(container: HTMLElement): () => void {
         additional: parseAdditionalParams(),
         limit: 20,
         next: append ? nextPage : undefined,
-        cursor: append ? walkCursor : undefined,
+        cursor: append ? searchCursor : undefined,
         signal: controller.signal,
       };
       const response = connection.isApi
@@ -897,13 +897,13 @@ function buildPanel(container: HTMLElement): () => void {
       if (generation !== searchGeneration) return;
       allItems = append ? [...allItems, ...response.items] : response.items;
       nextPage = response.next;
-      walkCursor = response.cursor;
+      searchCursor = response.cursor;
       // A fresh search invalidates the selection; "Load more" keeps it.
       if (!append) selectedItemId = null;
       renderItems();
       showFootprints(allItems);
       applySelection(false);
-      loadMore.hidden = !nextPage && !walkCursor;
+      loadMore.hidden = !nextPage && !searchCursor;
       clearResultsButton.disabled = allItems.length === 0;
       setStatus(searchStatus(append, response));
     } catch (error) {
