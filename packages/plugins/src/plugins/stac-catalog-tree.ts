@@ -188,7 +188,7 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
      * row to prove it would cost a request each and show nothing. Such a collection is still
      * searched whole; only its shape stays out of the tree.
      */
-    const reveal = async (additive: boolean): Promise<void> => {
+    const reveal = async (choose: boolean, additive: boolean): Promise<void> => {
       if (busy || loaded) return;
       busy = true;
       glyph.textContent = GLYPH.busy;
@@ -200,7 +200,10 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         loaded = true;
         bbox = opened.bbox;
         for (const child of opened.children) addNode(child, self, depth + 1);
-        if (kind === "collection") select(node.href, row, additive);
+        // A catalog may link its items directly, with no collection in between. Such a node holds
+        // data and has nothing to open, so it is a leaf to search rather than an empty folder.
+        if (!opened.children.length && opened.items) kind = "collection";
+        if (kind === "collection" && choose) select(node.href, row, additive);
         if (opened.children.length) return expand(true);
         if (kind === "collection") {
           glyph.textContent = GLYPH.leaf;
@@ -233,7 +236,7 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         return;
       }
       if (loaded) return expand(!self.open);
-      void reveal(additive);
+      void reveal(true, additive);
     };
 
     row.addEventListener("click", (event) => {
@@ -262,10 +265,11 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
       const steps: Record<string, () => void> = {
         ArrowDown: () => step(1),
         ArrowUp: () => step(-1),
+        // Opening a folder is navigation, not a choice: it must not disturb what is chosen.
         ArrowRight: () => {
-          if (kind === "collection" && !self.children.length) return;
-          if (!self.open) return activate(false);
-          focusRow(self.children[0]);
+          if (self.open) return focusRow(self.children[0]);
+          if (!loaded) return void reveal(false, false);
+          if (self.children.length) expand(true);
         },
         ArrowLeft: () => {
           if (self.open) return expand(false);

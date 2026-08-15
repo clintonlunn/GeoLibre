@@ -91,6 +91,18 @@ test("openCatalogNode reports what a node turned out to be and what is inside it
     if (String(input).endsWith("collection.json")) {
       return jsonResponse({ type: "Collection", id: "hazards", links: [] });
     }
+    if (String(input).endsWith("scenes.json")) {
+      // A catalog is allowed to link items with no collection in between.
+      return jsonResponse({
+        type: "Catalog",
+        id: "scenes",
+        links: [
+          { rel: "item", href: "./a.json" },
+          { rel: "item", href: "./b.json" },
+          { rel: "self", href: "./scenes.json" },
+        ],
+      });
+    }
     return jsonResponse({
       type: "Catalog",
       id: "topics",
@@ -99,6 +111,7 @@ test("openCatalogNode reports what a node turned out to be and what is inside it
   }) as typeof fetch;
 
   const catalog = await openCatalogNode("https://example.com/stac/topics/catalog.json", fetcher);
+  assert.equal(catalog.items, 0);
   assert.equal(catalog.kind, "container");
   assert.deepEqual(
     catalog.children.map((node) => [node.title, node.href]),
@@ -108,6 +121,11 @@ test("openCatalogNode reports what a node turned out to be and what is inside it
   const collection = await openCatalogNode("https://example.com/stac/x/collection.json", fetcher);
   assert.equal(collection.kind, "collection");
   assert.deepEqual(collection.children, []);
+
+  // Items the node carries itself are counted, and only those: `self` is not one of them.
+  const scenes = await openCatalogNode("https://example.com/stac/scenes.json", fetcher);
+  assert.equal(scenes.items, 2);
+  assert.deepEqual(scenes.children, []);
 });
 
 test("searchStaticStac starts at the chosen collection instead of walking from the root", async () => {
@@ -199,6 +217,8 @@ test("connectStac reads child links only, and names them when the link does not"
         { rel: "child", href: "./100%_coverage/catalog.json" },
         { rel: "child", href: "./UPPER/CATALOG.JSON" },
         { rel: "child", href: "./quads/" },
+        // At the root there is no folder to borrow a name from.
+        { rel: "child", href: "/standalone.json" },
       ],
     })) as typeof fetch;
 
@@ -210,6 +230,7 @@ test("connectStac reads child links only, and names them when the link does not"
       ["100%_coverage", "container"],
       ["UPPER", "container"],
       ["quads", "container"],
+      ["standalone", "container"],
     ],
   );
 });

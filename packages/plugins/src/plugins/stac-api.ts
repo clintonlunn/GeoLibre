@@ -74,6 +74,8 @@ export interface StacCatalogNode {
 export interface StacOpenedNode {
   kind: "collection" | "container";
   children: StacCatalogNode[];
+  /** Items linked from the node itself, which a catalog is allowed to carry without a collection. */
+  items?: number;
   /** A collection's own extent, so the map can be sent to it without reading any item. */
   bbox?: [number, number, number, number];
 }
@@ -212,7 +214,11 @@ function normalizeItem(item: StacItem, base: string): StacItem {
 function folderName(href: string): string {
   const segments = new URL(href).pathname.split("/").filter(Boolean);
   const last = segments.at(-1);
-  const name = (/\.json$/i.test(last ?? "") ? segments.at(-2) : last) ?? href;
+  // A file at the root has no folder to be named after, so its own name will have to do.
+  const named = /\.json$/i.test(last ?? "")
+    ? (segments.at(-2) ?? last?.replace(/\.json$/i, ""))
+    : last;
+  const name = named ?? href;
   try {
     return decodeURIComponent(name);
   } catch {
@@ -266,9 +272,11 @@ export async function openCatalogNode(
   const document = await fetchJson<Record<string, unknown>>(href, { signal }, fetcher);
   if (typeof document !== "object" || document === null || Array.isArray(document))
     throw new Error("The link did not return a STAC document");
+  const links = linksOf(document.links, href);
   return {
     kind: document.type === "Collection" ? "collection" : "container",
     children: catalogChildren(document, href),
+    items: links.filter((link) => link.rel === "item").length,
     bbox: collectionBbox(document),
   };
 }

@@ -348,6 +348,32 @@ test("an aborted read is not reported as a failure", async () => {
   });
 });
 
+test("a catalog that carries its own items is a leaf to search, not an empty folder", async () => {
+  await withDom(async () => {
+    // STAC lets a catalog link items with no collection in between, and the spec's own examples
+    // do it. Such a node has nothing to open, but it does have data to search.
+    const read = async (): Promise<StacOpenedNode> => ({
+      kind: "container",
+      children: [],
+      items: 4,
+    });
+    const tree = buildCatalogTree({ labels: LABELS, onError: () => {}, read });
+    tree.reset([node("Scenes")]);
+    const [scenes] = rowsOf(tree);
+
+    click(scenes);
+    await settle();
+    const box = scenes.nextElementSibling as HTMLElement;
+    assert.notEqual(box.textContent, LABELS.empty, "it is not empty, so it must not say so");
+    assert.equal(scenes.textContent, "•Scenes");
+    assert.deepEqual(
+      tree.selection(),
+      ["https://example.com/Scenes.json"],
+      "and the search can be scoped to it",
+    );
+  });
+});
+
 test("an empty container says so instead of looking unread", async () => {
   await withDom(async () => {
     const read = async (): Promise<StacOpenedNode> => ({ kind: "container", children: [] });
@@ -583,6 +609,37 @@ test("a collection that holds collections can be closed and opened again", async
     click(landsat);
     await settle();
     assert.equal(box.hidden, true, "and so can a click");
+  });
+});
+
+test("opening a folder with the arrows leaves the selection alone", async () => {
+  await withDom(async () => {
+    // A row that turns out to be a collection holding collections: opening it used to choose it,
+    // and choosing without a modifier clears everything else.
+    const read = async (): Promise<StacOpenedNode> => ({
+      kind: "collection",
+      children: [node("Water", "collection")],
+    });
+    const tree = buildCatalogTree({ labels: LABELS, onError: () => {}, read });
+    tree.reset([node("Hazards", "collection"), node("Geology", "collection"), node("Topics")]);
+    const [hazards, geology, topics] = rowsOf(tree);
+
+    click(hazards);
+    click(geology, true);
+    await settle();
+    assert.equal(tree.selection().length, 2);
+
+    // Right opens the folder. A choice made elsewhere is not the folder's business.
+    press(topics, "ArrowRight");
+    await settle();
+    assert.equal(topics.getAttribute("aria-expanded"), "true");
+    assert.equal(tree.selection().length, 2, "navigating did not clear what was chosen");
+
+    press(topics, "ArrowLeft");
+    press(topics, "ArrowRight");
+    await settle();
+    assert.equal(topics.getAttribute("aria-expanded"), "true");
+    assert.equal(tree.selection().length, 2);
   });
 });
 
