@@ -2400,14 +2400,15 @@ export class MapController {
       // style, so getNamedStyleLayers (which filters to existing style layers)
       // skips them. Publish their store id -> name directly so the Layer Swipe
       // panel, which lists them by store id via its COG layerProvider, shows a
-      // friendly name instead of the raw id. Scoped to "cog-url" (the
-      // CogLayerControl rasters the provider lists) to match that scope. See
-      // opengeos/GeoLibre#1240.
+      // friendly name instead of the raw id. Scoped to the two kinds that
+      // provider lists -- "cog-url" (CogLayerControl) and "maplibre-gl-raster"
+      // (RasterControl) -- to match that scope. See opengeos/GeoLibre#1240.
       ...layers
         .filter(
           (layer) =>
             layer.type === "cog" &&
-            layer.metadata.sourceKind === "cog-url" &&
+            (layer.metadata.sourceKind === "cog-url" ||
+              layer.metadata.sourceKind === "maplibre-gl-raster") &&
             layer.metadata.externalNativeLayer === true,
         )
         .map((layer): [string, string] => [layer.id, layer.name]),
