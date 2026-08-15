@@ -483,6 +483,50 @@ test("a page that runs out of reads before matching anything returns a cursor, n
   assert.equal(second.matched, 1);
 });
 
+test("a document that never reads leaves the search without a total", async () => {
+  const docs: Record<string, unknown> = {
+    "https://example.com/stac/catalog.json": {
+      type: "Catalog",
+      links: [
+        { rel: "item", href: "./good.json" },
+        { rel: "child", href: "./dead.json" },
+      ],
+    },
+    "https://example.com/stac/good.json": {
+      type: "Feature",
+      id: "good",
+      collection: "c",
+      bbox: [0, 0, 1, 1],
+      geometry: null,
+      properties: { datetime: "2024-05-01T00:00:00Z" },
+      assets: {},
+    },
+  };
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("dead.json")) throw new Error("gone");
+    return jsonResponse(docs[url]);
+  }) as typeof fetch;
+
+  const connection = {
+    url: "https://example.com/stac/catalog.json",
+    title: "Static",
+    isApi: false,
+    collections: [],
+    root: docs["https://example.com/stac/catalog.json"] as Record<string, unknown>,
+  };
+
+  let result = await searchStaticStac(connection, { limit: 20 }, fetcher);
+  const ids = result.items.map((item) => item.id);
+  while (result.cursor) {
+    result = await searchStaticStac(connection, { limit: 20, cursor: result.cursor }, fetcher);
+    ids.push(...result.items.map((item) => item.id));
+  }
+  assert.deepEqual(ids, ["good"]);
+  // The dead child's subtree went unread, so "1 of 1" would overstate what was searched.
+  assert.equal(result.matched, undefined);
+});
+
 test("asset and bbox helpers recognize common STAC data", () => {
   assert.equal(isVisualizableAsset({ href: "https://example.com/a.TIF?download=1" }), true);
   assert.equal(isVisualizableAsset({ href: "https://example.com/data.bin" }), false);

@@ -66,6 +66,8 @@ export interface StacSearchCursor {
   visited: Set<string>;
   /** Items already delivered, so the last page can report a real total. */
   offset: number;
+  /** Documents given up on; with any of these the catalog was not fully read. */
+  dropped: number;
 }
 
 export interface StacSearchOptions {
@@ -344,6 +346,7 @@ export async function searchStaticStac(
     folders: [{ url: connection.url, document: connection.root }],
     visited: new Set<string>(),
     offset: 0,
+    dropped: 0,
   };
   const found: StacItem[] = [];
   const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
@@ -389,7 +392,10 @@ export async function searchStaticStac(
         fetcher,
       );
     } catch {
-      if (entry.retried) return undefined;
+      if (entry.retried) {
+        walk.dropped += 1;
+        return undefined;
+      }
       walk.visited.delete(entry.url);
       from.unshift({ url: entry.url, retried: true });
       return undefined;
@@ -422,7 +428,8 @@ export async function searchStaticStac(
   const offset = walk.offset + found.length;
   const done = !walk.items.length && !walk.folders.length;
   // Counting every page, not the last: the panel accumulates, so a page total reads "25 of 5".
-  if (done) return { items: found, matched: offset };
+  // A dropped document leaves part of the catalog unread, so the count is no longer a total.
+  if (done) return { items: found, matched: walk.dropped ? undefined : offset };
   walk.offset = offset;
   return { items: found, cursor: walk };
 }
