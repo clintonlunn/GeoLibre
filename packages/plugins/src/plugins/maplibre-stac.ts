@@ -942,7 +942,7 @@ function buildPanel(container: HTMLElement): () => void {
         loadMore.disabled = false;
       }
     }
-  };
+  }
 
   catalogSearch.input.addEventListener("input", renderCatalogs);
   catalogSelect.addEventListener("change", () => {
