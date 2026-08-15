@@ -113,7 +113,7 @@ export interface StacLabels {
   resultsCleared: string;
   searching: string;
   loadingMore: string;
-  noNewItems: string;
+  noMatchesHere: string;
   noResults: string;
   searchFailed: string;
   loadMore: string;
@@ -181,7 +181,7 @@ let labels: StacLabels = {
   resultsCleared: "Search results cleared.",
   searching: "Searching STAC items…",
   loadingMore: "Loading more items…",
-  noNewItems: "No new items in that part of the catalog. Load more to keep searching.",
+  noMatchesHere: "Nothing matched in that part of the catalog. Load more to keep searching.",
   noResults: "No STAC items matched these filters.",
   searchFailed: "STAC search failed",
   loadMore: "Load more",
@@ -861,8 +861,8 @@ function buildPanel(container: HTMLElement): () => void {
     return parsed as Record<string, unknown>;
   };
 
-  const searchStatus = (append: boolean, result: StacSearchResult): string => {
-    if (append && !result.items.length && searchCursor) return labels.noNewItems;
+  const searchStatus = (result: StacSearchResult): string => {
+    if (!result.items.length && result.cursor) return labels.noMatchesHere;
     if (!allItems.length) return labels.noResults;
     if (result.matched) return labels.showingOfMatched(allItems.length, result.matched);
     return labels.showing(allItems.length);
@@ -905,7 +905,7 @@ function buildPanel(container: HTMLElement): () => void {
       applySelection(false);
       loadMore.hidden = !nextPage && !searchCursor;
       clearResultsButton.disabled = allItems.length === 0;
-      setStatus(searchStatus(append, response));
+      setStatus(searchStatus(response));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : labels.searchFailed, true);
     } finally {

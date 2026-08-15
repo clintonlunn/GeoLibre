@@ -432,6 +432,57 @@ test("a read that fails once is retried rather than dropped from the search", as
   assert.deepEqual(ids.sort(), ["flaky", "steady"]);
 });
 
+test("a page that runs out of reads before matching anything returns a cursor, not a total", async () => {
+  // The panel says "no results" off a finished empty page, so an unfinished one must not look
+  // finished: the match here sits past the first page's read budget.
+  const root = {
+    type: "Catalog",
+    links: Array.from({ length: 400 }, (_, index) => ({
+      rel: "child",
+      href: `./child-${index}.json`,
+    })),
+  };
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("child-399.json")) {
+      return jsonResponse({ type: "Catalog", links: [{ rel: "item", href: "./deep.json" }] });
+    }
+    if (url.endsWith("deep.json")) {
+      return jsonResponse({
+        type: "Feature",
+        id: "deep",
+        collection: "c",
+        bbox: [0, 0, 1, 1],
+        geometry: null,
+        properties: { datetime: "2024-05-01T00:00:00Z" },
+        assets: {},
+      });
+    }
+    return jsonResponse({ type: "Catalog", links: [] });
+  }) as typeof fetch;
+
+  const connection = {
+    url: "https://example.com/stac/catalog.json",
+    title: "Static",
+    isApi: false,
+    collections: [],
+    root,
+  };
+
+  const first = await searchStaticStac(connection, { limit: 20 }, fetcher);
+  assert.deepEqual(first.items, []);
+  assert.ok(first.cursor, "an unfinished walk must hand back a cursor");
+  assert.equal(first.matched, undefined, "an unfinished walk has no total to report");
+
+  const second = await searchStaticStac(connection, { limit: 20, cursor: first.cursor }, fetcher);
+  assert.deepEqual(
+    second.items.map((item) => item.id),
+    ["deep"],
+  );
+  assert.equal(second.cursor, undefined);
+  assert.equal(second.matched, 1);
+});
+
 test("asset and bbox helpers recognize common STAC data", () => {
   assert.equal(isVisualizableAsset({ href: "https://example.com/a.TIF?download=1" }), true);
   assert.equal(isVisualizableAsset({ href: "https://example.com/data.bin" }), false);

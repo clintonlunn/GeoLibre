@@ -3399,7 +3399,7 @@
     "resultsCleared": "Search results cleared.",
     "searching": "Searching STAC items…",
     "loadingMore": "Loading more items…",
-    "noNewItems": "No new items in that part of the catalog. Load more to keep searching.",
+    "noMatchesHere": "Nothing matched in that part of the catalog. Load more to keep searching.",
     "noResults": "No STAC items matched these filters.",
     "searchFailed": "STAC search failed",
     "showing": "Showing {{count}} items.",
