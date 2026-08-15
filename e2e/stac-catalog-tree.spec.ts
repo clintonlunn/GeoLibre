@@ -24,6 +24,34 @@ const DOCUMENTS: Record<string, unknown> = {
     id: "topics",
     links: [{ rel: "child", href: "./water/collection.json", title: "Water" }],
   },
+  "https://stac.test/hazards/collection.json": {
+    type: "Collection",
+    id: "hazards",
+    extent: { spatial: { bbox: [[-114, 37, -109, 42]] } },
+    links: [{ rel: "item", href: "./slide.json" }],
+  },
+  "https://stac.test/hazards/slide.json": {
+    type: "Feature",
+    stac_version: "1.0.0",
+    id: "landslide",
+    collection: "hazards",
+    bbox: [-113, 38, -112, 39],
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-113, 38],
+          [-112, 38],
+          [-112, 39],
+          [-113, 39],
+          [-113, 38],
+        ],
+      ],
+    },
+    properties: { datetime: "2024-05-01T00:00:00Z" },
+    assets: {},
+    links: [],
+  },
 };
 
 /** Serves the fixture catalog, so the suite needs no network and no third-party catalog. */
@@ -176,4 +204,28 @@ test("the tree is one tab stop, and the arrows move within it", async ({ page })
   // searching a collection is reachable without a mouse.
   await page.keyboard.press("Enter");
   await expect(water).toHaveAttribute("aria-selected", "true");
+});
+
+test("Ctrl+Enter on a collection searches it and takes the map to it", async ({ page }) => {
+  await serveCatalog(page);
+  await waitForMap(page);
+  await openStacPanel(page);
+  await page.getByLabel("Limit search to the current map extent").uncheck();
+
+  const view = async (): Promise<string> => {
+    const text = (await page.locator("footer, [class*=status]").first().textContent()) ?? "";
+    return /BBox:[^A-Z]*/.exec(text)?.[0] ?? "";
+  };
+  const before = await view();
+  expect(before).toMatch(/BBox:/);
+
+  // The collection was only guessed from its link, so its extent is not known until the search
+  // asks for it — the map still has to end up there.
+  const hazards = page.getByRole("treeitem", { name: "Hazards" });
+  await hazards.focus();
+  await page.keyboard.press("Control+Enter");
+
+  await expect(page.getByText("Showing 1 of 1 items.")).toBeVisible({ timeout: 15_000 });
+  await expect(hazards).toHaveAttribute("aria-selected", "true");
+  await expect.poll(view, { timeout: 15_000 }).not.toBe(before);
 });

@@ -309,6 +309,23 @@ test("a node that cannot be read says so in the translated wording and stays ope
   });
 });
 
+test("a read that fails with something other than an Error still says what happened", async () => {
+  await withDom(async () => {
+    const errors: string[] = [];
+    // Not everything a fetch layer throws is an Error: a rejected string or a plain object would
+    // otherwise reach the panel as an empty reason.
+    const read = async (): Promise<StacOpenedNode> => {
+      throw "gateway said no";
+    };
+    const tree = buildCatalogTree({ labels: LABELS, onError: (m) => errors.push(m), read });
+    tree.reset([node("Themes")]);
+
+    click(rowsOf(tree)[0]);
+    await settle();
+    assert.deepEqual(errors, [`${LABELS.openFailed}: gateway said no`]);
+  });
+});
+
 test("an aborted read is not reported as a failure", async () => {
   await withDom(async () => {
     const controller = new AbortController();

@@ -252,6 +252,115 @@ test("openCatalogNode refuses a document that is not an object", async () => {
   await assert.rejects(() => openCatalogNode("https://example.com/gone.json", fetcher), /404/);
 });
 
+test("several chosen collections are searched together, and the root is not read twice", async () => {
+  const docs: Record<string, unknown> = {
+    "https://example.com/stac/catalog.json": {
+      type: "Catalog",
+      links: [{ rel: "item", href: "./root-item.json" }],
+    },
+    "https://example.com/stac/a.json": {
+      type: "Collection",
+      id: "a",
+      links: [{ rel: "item", href: "./a-item.json" }],
+    },
+    "https://example.com/stac/b.json": {
+      type: "Collection",
+      id: "b",
+      links: [{ rel: "item", href: "./b-item.json" }],
+    },
+  };
+  for (const id of ["root-item", "a-item", "b-item"]) {
+    docs[`https://example.com/stac/${id}.json`] = {
+      type: "Feature",
+      id,
+      collection: "c",
+      bbox: [0, 0, 1, 1],
+      geometry: null,
+      properties: { datetime: "2024-05-01T00:00:00Z" },
+      assets: {},
+    };
+  }
+  const reads: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    reads.push(String(input));
+    return jsonResponse(docs[String(input)]);
+  }) as typeof fetch;
+  const connection = {
+    url: "https://example.com/stac/catalog.json",
+    title: "Static",
+    isApi: false,
+    collections: [],
+    root: docs["https://example.com/stac/catalog.json"] as Record<string, unknown>,
+  };
+
+  const result = await searchStaticStac(
+    connection,
+    {
+      // The root is one of the chosen entries: the caller already has that document, so asking
+      // the network for it again would be a read spent on something already in hand.
+      entries: [
+        "https://example.com/stac/a.json",
+        "https://example.com/stac/b.json",
+        connection.url,
+      ],
+      limit: 20,
+    },
+    fetcher,
+  );
+
+  assert.deepEqual(result.items.map((item) => item.id).sort(), ["a-item", "b-item", "root-item"]);
+  assert.equal(
+    reads.filter((url) => url === connection.url).length,
+    0,
+    "the root came from the connection, not from a second read",
+  );
+});
+
+test("openCatalogNode reports a collection's extent, and ignores a malformed one", async () => {
+  const extents: Record<string, unknown> = {
+    good: { spatial: { bbox: [[-114, 37, -109, 42]] } },
+    // A 3D extent carries six numbers; the map only wants the four that are horizontal.
+    deep: { spatial: { bbox: [[-114, 37, 0, -109, 42, 2000]] } },
+    empty: { spatial: { bbox: [] } },
+    words: { spatial: { bbox: [["west", "south", "east", "north"]] } },
+    short: { spatial: { bbox: [[-114, 37]] } },
+    temporalOnly: { temporal: { interval: [["2024-01-01T00:00:00Z", null]] } },
+    notAnObject: "everywhere",
+  };
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const key = new URL(String(input)).pathname.slice(1).replace(".json", "");
+    return jsonResponse({ type: "Collection", id: key, links: [], extent: extents[key] });
+  }) as typeof fetch;
+
+  const bboxOf = async (key: string) =>
+    (await openCatalogNode(`https://example.com/${key}.json`, fetcher)).bbox;
+
+  assert.deepEqual(await bboxOf("good"), [-114, 37, -109, 42]);
+  assert.deepEqual(await bboxOf("deep"), [-114, 37, -109, 42]);
+  for (const key of ["empty", "words", "short", "temporalOnly", "notAnObject"]) {
+    assert.equal(await bboxOf(key), undefined, `${key} is not an extent the map can be sent to`);
+  }
+});
+
+test("openCatalogNode gives up when the search that asked for it is called off", async () => {
+  const controller = new AbortController();
+  let seen: AbortSignal | undefined;
+  const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    seen = init?.signal ?? undefined;
+    if (seen?.aborted) throw new DOMException("aborted", "AbortError");
+    return jsonResponse({ type: "Catalog", links: [] });
+  }) as typeof fetch;
+
+  await openCatalogNode("https://example.com/stac/catalog.json", fetcher, controller.signal);
+  assert.equal(seen, controller.signal, "the caller's signal reaches the request");
+
+  controller.abort();
+  await assert.rejects(
+    () => openCatalogNode("https://example.com/stac/catalog.json", fetcher, controller.signal),
+    /abort/i,
+  );
+});
+
 test("a search keeps the collection filter it began with as later pages arrive", async () => {
   // The tree's selection can change between Load more clicks; the filter must not follow it, or
   // one accumulated list ends up filtered two ways.
