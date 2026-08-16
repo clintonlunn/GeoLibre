@@ -84,7 +84,16 @@ export function createPMTilesStoreLayer(options: PMTilesStoreLayerOptions): GeoL
     sourcePath: url,
     visible: options.visible ?? true,
     opacity: options.opacity ?? 1,
-    style: { ...DEFAULT_LAYER_STYLE, fillColor, strokeColor: fillColor, ...options.style },
+    // The outline follows the fill unless the caller set its own.
+    style: {
+      ...DEFAULT_LAYER_STYLE,
+      fillColor,
+      strokeColor: fillColor,
+      ...options.style,
+      ...(options.style?.fillColor && !options.style.strokeColor
+        ? { strokeColor: options.style.fillColor }
+        : {}),
+    },
     metadata: {
       externalNativeLayer: true,
       nativeLayerIds: [

@@ -99,6 +99,14 @@ describe("createPMTilesStoreLayer", () => {
     });
 
     assert.equal(painted.style.fillColor, "#00ff00");
+    assert.equal(painted.style.strokeColor, "#00ff00");
+
+    const outlined = createPMTilesStoreLayer({
+      ...archive,
+      style: { fillColor: "#00ff00", strokeColor: "#000000" },
+    });
+
+    assert.equal(outlined.style.strokeColor, "#000000");
   });
 });
 
