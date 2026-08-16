@@ -676,6 +676,8 @@ function buildPanel(container: HTMLElement): () => void {
   let searchCursor: StacSearchCursor | undefined;
   let allItems: StacItem[] = [];
   let searchGeneration = 0;
+  /** The extent read a collection asked for, cancelled when another collection is asked for. */
+  let extentRead: AbortController | null = null;
   let cancelDraw: (() => void) | null = null;
   let selectedItemId: string | null = null;
   const cardsByItemId = new Map<string, HTMLElement>();
@@ -886,15 +888,18 @@ function buildPanel(container: HTMLElement): () => void {
 
   /** The tree asked for a collection: search it, and send the map to it. */
   function showCollection(href: string, bbox?: [number, number, number, number]): void {
-    // The search this belongs to, taken before it starts rather than read back afterwards: asking
-    // for a second collection while the first extent is in flight must not move the map back.
-    const generation = ++searchGeneration;
-    void runSearch(false, generation);
+    void runSearch(false, ++searchGeneration);
     if (bbox) return void appRef?.fitBounds?.(bbox);
     // A collection guessed from its link has never been read, so its extent has to be fetched.
-    void openCatalogNode(href, fetch, controller.signal)
+    // Asking for a second collection cancels that read rather than letting it finish and be
+    // thrown away, so the map cannot be sent where the user no longer is.
+    extentRead?.abort();
+    const reading = new AbortController();
+    extentRead = reading;
+    const scope = AbortSignal.any([reading.signal, controller.signal]);
+    void openCatalogNode(href, fetch, scope)
       .then((node) => {
-        if (generation === searchGeneration && node.bbox) appRef?.fitBounds?.(node.bbox);
+        if (!scope.aborted && node.bbox) appRef?.fitBounds?.(node.bbox);
       })
       .catch(() => undefined);
   }
@@ -945,6 +950,8 @@ function buildPanel(container: HTMLElement): () => void {
       clearResultsButton.disabled = allItems.length === 0;
       setStatus(searchStatus(response));
     } catch (error) {
+      // A search the user has moved on from must not report its failure over the current one.
+      if (search !== searchGeneration) return;
       setStatus(error instanceof Error ? error.message : labels.searchFailed, true);
     } finally {
       if (search === searchGeneration) {

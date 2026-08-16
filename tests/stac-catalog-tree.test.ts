@@ -761,6 +761,39 @@ test("double-clicking a folder that turns out to be a collection still searches 
   });
 });
 
+test("a double-click answered after the catalog changes asks for nothing", async () => {
+  await withDom(async () => {
+    const activated: string[] = [];
+    let release: (value: StacOpenedNode) => void = () => {};
+    const read = async (): Promise<StacOpenedNode> =>
+      new Promise<StacOpenedNode>((resolve) => {
+        release = resolve;
+      });
+    const tree = buildCatalogTree({
+      labels: LABELS,
+      onError: () => {},
+      onActivate: (href) => activated.push(href),
+      read,
+    });
+    // A row the link already calls a collection: its kind survives a stale read, so nothing else
+    // would stop the activation landing after the catalog changed.
+    tree.reset([node("Old", "collection")]);
+    const [old] = rowsOf(tree);
+
+    click(old);
+    old.dispatchEvent(
+      new (globalThis as { Event: typeof Event }).Event("dblclick", { bubbles: true }),
+    );
+    // The user connects elsewhere before the read comes back.
+    tree.reset([node("New", "collection")]);
+    release({ kind: "collection", children: [], items: 3 });
+    await settle();
+
+    assert.deepEqual(activated, [], "a row from a catalog the user has left asks for nothing");
+    assert.deepEqual(tree.selection(), []);
+  });
+});
+
 test("reset drops the previous catalog's rows and selection", async () => {
   await withDom(async () => {
     const tree = buildCatalogTree({ labels: LABELS, onError: () => {} });
