@@ -1793,6 +1793,8 @@ export async function addPMTilesLayerFromUrl(
   };
   map?.on("movestart", onMoveStart);
   map?.on("moveend", onMoveEnd);
+  // The control emits `layeradd` synchronously while adding, so the handler has already spent this
+  // name by the time the await returns; the disposer is for the archive that throws before it.
   const clearPendingName =
     options.name === undefined ? undefined : setPendingPMTilesName(url, options.name);
   try {
@@ -4788,8 +4790,8 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
 const pendingPMTilesNames = new Map<string, { name: string }[]>();
 
 /**
- * @internal Exported only so the programmatic-name handoff can be unit-tested. Returns a disposer,
- * so an add that never reaches `layeradd` (a broken archive) leaves nothing behind.
+ * @internal Exported for tests. Returns a disposer, so an add that never reaches `layeradd` (a
+ * broken archive) leaves nothing queued behind it.
  */
 export function setPendingPMTilesName(url: string, name: string): () => void {
   const queue = pendingPMTilesNames.get(url) ?? [];
@@ -4803,7 +4805,7 @@ export function setPendingPMTilesName(url: string, name: string): () => void {
   };
 }
 
-/** @internal Exported only so the programmatic-name handoff can be unit-tested. */
+/** @internal Spends a queued name, falling back to the control's own and then the file name. */
 export function resolvePMTilesLayerName(layerInfo: PMTilesLayerInfo, id: string): string {
   const queue = pendingPMTilesNames.get(layerInfo.url);
   const pending = queue?.shift();
