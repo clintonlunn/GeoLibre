@@ -83,12 +83,25 @@ const DOCUMENTS: Record<string, unknown> = {
 };
 
 /** Serves the fixture catalog, so the suite needs no network and no third-party catalog. */
-async function serveCatalog(page: Page, asked: string[] = [], slow?: string): Promise<void> {
+/**
+ * Serves the fixture catalog. `slow` names a document that answers late, so a race can be staged
+ * rather than hoped for, and the returned promise says when that late answer has landed: waiting
+ * on it beats sleeping for longer than the delay and hoping.
+ */
+async function serveCatalog(
+  page: Page,
+  asked: string[] = [],
+  slow?: string,
+): Promise<{ slowAnswered: Promise<void> }> {
+  let answered: () => void = () => {};
+  const slowAnswered = new Promise<void>((resolve) => {
+    answered = resolve;
+  });
   await page.route("https://stac.test/**", async (route) => {
     const url = route.request().url();
     asked.push(url);
-    // A document that answers late, so a race can be staged rather than hoped for.
-    if (slow && url.includes(slow)) await new Promise((resolve) => setTimeout(resolve, 2500));
+    const late = Boolean(slow && url.includes(slow));
+    if (late) await new Promise((resolve) => setTimeout(resolve, 2500));
     const document = DOCUMENTS[route.request().url()];
     if (!document) {
       await route.fulfill({ status: 404, body: "not found" });
@@ -99,7 +112,9 @@ async function serveCatalog(page: Page, asked: string[] = [], slow?: string): Pr
       contentType: "application/json",
       body: JSON.stringify(document),
     });
+    if (late) answered();
   });
+  return { slowAnswered };
 }
 
 async function openStacPanel(page: Page): Promise<void> {
@@ -320,7 +335,7 @@ test("a folder is not read until it is opened", async ({ page }) => {
 test("asking for a second collection wins, however slowly the first one answers", async ({
   page,
 }) => {
-  await serveCatalog(page, [], "hazards/collection.json");
+  const { slowAnswered } = await serveCatalog(page, [], "hazards/collection.json");
   await waitForMap(page);
   await openStacPanel(page);
   await page.getByLabel("Limit search to the current map extent").uncheck();
@@ -334,20 +349,12 @@ test("asking for a second collection wins, however slowly the first one answers"
 
   await expect(page.getByText("Showing 1 of 1 items.")).toBeVisible({ timeout: 15_000 });
 
-  // Watch until the view stops changing, and never before the late answer has had its chance: a
-  // fixed sleep would either race the delay or pad every run to hide it.
-  const settled = async (): Promise<number[]> => {
-    const deadline = Date.now() + 4000;
-    let previous = await mapBounds(page);
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await page.waitForTimeout(400);
-      const next = await mapBounds(page);
-      if (Date.now() > deadline && next.join() === previous.join()) return next;
-      previous = next;
-    }
-    return previous;
-  };
-  const [west, , east] = await settled();
+  // The stale answer has landed, so whatever the map does next is the answer to the second ask.
+  await slowAnswered;
+  await expect
+    .poll(async () => (await mapBounds(page))[0], { timeout: 10_000 })
+    .toBeGreaterThan(-114);
+  const [west, , east] = await mapBounds(page);
   expect(east - west).toBeLessThan(4);
   expect(west).toBeGreaterThan(-114);
 });

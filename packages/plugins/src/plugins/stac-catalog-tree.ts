@@ -89,6 +89,9 @@ export interface CatalogTreeOptions {
 /** A catalog rendered as a tree, reading each node's children only when it is opened. */
 export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
   const { labels, onError, onActivate, signal, read = openCatalogNode } = options;
+  /** A read stops when its connection is replaced, or when the panel itself goes away. */
+  const reads = (connection: AbortSignal): AbortSignal =>
+    signal ? AbortSignal.any([connection, signal]) : connection;
   ensureStyle();
   const element = el("div");
   element.style.cssText = style.tree;
@@ -97,11 +100,15 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
   // Keyed by row, not by document: the same collection is often linked from two branches, and
   // keying by document would let a click on one row cancel the other.
   const selected = new Map<HTMLElement, string>();
-  // A catalog the user has left must not keep writing into the tree that replaced it.
-  let generation = 0;
+  /**
+   * One connection's worth of reading. Replacing the catalog aborts it, so reads in flight stop
+   * rather than finishing into a tree that has moved on, and every path that resumes after an
+   * `await` has the same one thing to check.
+   */
+  let session = new AbortController();
   // Asking for a row is asking for the newest one: a request that waited on a slow read must not
   // land after the user has asked for something else.
-  let asked = 0;
+  let asking = new AbortController();
 
   // The tree built every row, so it keeps its own shape rather than reading it back out of the
   // DOM — and the arrows can then move by parent and child instead of by selector.
@@ -148,7 +155,8 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
   };
 
   const addNode = (node: StacCatalogNode, parent: Row | undefined, depth: number): void => {
-    const mine = generation;
+    // The connection this row belongs to; it is aborted when the catalog is replaced.
+    const mine = session.signal;
     const row = el("button");
     row.type = "button";
     row.className = ROW_CLASS;
@@ -201,11 +209,13 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
     };
 
     const readNode = async (choose: boolean, additive: boolean): Promise<void> => {
+      const scope = reads(mine);
       glyph.textContent = GLYPH.busy;
       try {
-        const opened = await read(node.href, fetch, signal);
-        // The catalog this row belongs to may have been replaced while the read was in flight.
-        if (mine !== generation) return;
+        const opened = await read(node.href, fetch, scope);
+        // The catalog this row belongs to may have been replaced while the read was in flight,
+        // or the panel itself closed.
+        if (scope.aborted) return;
         kind = opened.kind;
         loaded = true;
         bbox = opened.bbox;
@@ -224,7 +234,7 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
         childrenBox.append(empty);
         childrenBox.hidden = false;
       } catch (error) {
-        if (mine !== generation || signal?.aborted) return;
+        if (scope.aborted) return;
         glyph.textContent = closedGlyph();
         // The translated sentence carries the meaning; the raw text says which failure it was.
         const detail = error instanceof Error ? error.message : String(error);
@@ -263,9 +273,13 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
      * that, double-clicking a folder that turns out to be a collection searches nothing.
      */
     const show = async (): Promise<void> => {
-      const mine = ++asked;
+      asking.abort();
+      asking = new AbortController();
+      const request = asking.signal;
       await reading;
-      if (mine !== asked || kind !== "collection") return;
+      // Neither a newer request nor a catalog the user has left: either would search one thing
+      // and send the map to another.
+      if (request.aborted || mine.aborted || kind !== "collection") return;
       if (!selected.has(row)) select(node.href, row, false);
       onActivate?.(node.href, bbox);
     };
@@ -318,7 +332,8 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
   return {
     element,
     reset(nodes) {
-      generation += 1;
+      session.abort();
+      session = new AbortController();
       element.innerHTML = "";
       selected.clear();
       roots.length = 0;
