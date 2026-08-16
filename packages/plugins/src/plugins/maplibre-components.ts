@@ -1745,15 +1745,13 @@ export function openPMTilesLayerPanel(app: GeoLibreAppAPI): void {
  *
  * @param app - The GeoLibre app API.
  * @param url - An http(s) URL to a `.pmtiles` archive.
- * @param options.name - Layer name, for a caller that knows better than the file name. The
- *   control's own `addLayer` takes none, so it reaches the layer through the `layeradd` handler.
  * @returns True when the archive was added.
  * @throws If the archive could not be loaded (unreachable, not PMTiles, 403).
  */
 export function addPMTilesLayerFromUrl(
   app: GeoLibreAppAPI,
   url: string,
-  options: { fit?: boolean; name?: string } = {},
+  options: { fit?: boolean; signal?: AbortSignal } = {},
 ): Promise<boolean> {
   return pmtilesAdds(() => addPMTilesLayerNow(app, url, options));
 }
@@ -1767,8 +1765,11 @@ const pmtilesAdds = createTaskQueue();
 async function addPMTilesLayerNow(
   app: GeoLibreAppAPI,
   url: string,
-  options: { fit?: boolean; name?: string },
+  options: { fit?: boolean; signal?: AbortSignal },
 ): Promise<boolean> {
+  // Checked here rather than only before queueing: a caller can wait behind other adds, and the
+  // panel that asked for this one may be gone by the time its turn comes.
+  options.signal?.throwIfAborted();
   const { PMTilesLayerControl: PMTilesLayerControlClass } = await getComponentsConstructors();
 
   pmtilesControl ??= createPMTilesControl(PMTilesLayerControlClass);
@@ -1808,14 +1809,9 @@ async function addPMTilesLayerNow(
   };
   map?.on("movestart", onMoveStart);
   map?.on("moveend", onMoveEnd);
-  // The control emits `layeradd` synchronously while adding, so the handler has already spent this
-  // name by the time the await returns; the disposer is for the archive that throws before it.
-  const clearPendingName =
-    options.name === undefined ? undefined : setPendingPMTilesName(url, options.name);
   try {
     await pmtilesControl.addLayer(url);
   } finally {
-    clearPendingName?.();
     // Preserve a host user's camera interaction that happened while the archive
     // header was loading, rather than restoring the older pre-load position.
     if (userMoving) camera = readCamera();
@@ -4798,32 +4794,6 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
   };
 }
 
-// A name handed to addPMTilesLayerFromUrl, waiting for the `layeradd` it belongs to. The control's
-// own `addLayer(url)` takes no name, so a caller with a better one than the file name (a STAC item
-// and its asset, say) leaves it here. Adds through this module are serialized, so only one is ever
-// pending; it carries its archive so a layer the control's own panel adds meanwhile cannot take it.
-let pendingPMTiles: { url: string; name: string } | null = null;
-
-/**
- * @internal Exported for tests. Returns a disposer, so an add that never reaches `layeradd` (a
- * broken archive) leaves nothing behind it.
- */
-export function setPendingPMTilesName(url: string, name: string): () => void {
-  pendingPMTiles = { url, name };
-  return () => {
-    pendingPMTiles = null;
-  };
-}
-
-/** @internal Spends the pending name, falling back to the control's own and then the file name. */
-export function resolvePMTilesLayerName(layerInfo: PMTilesLayerInfo, id: string): string {
-  const fallback = layerInfo.name || layerNameFromUrl(layerInfo.url, id);
-  if (pendingPMTiles?.url !== layerInfo.url) return fallback;
-  const { name } = pendingPMTiles;
-  pendingPMTiles = null;
-  return name || fallback;
-}
-
 function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
   return (event) => {
     if (!event.layerId) return;
@@ -5442,7 +5412,7 @@ function createGeoTiffRasterStoreLayer(state: GeoTiffRasterLayerState): GeoLibre
 export function pmtilesStoreLayer(id: string, layerInfo: PMTilesLayerInfo): GeoLibreLayer {
   return createPMTilesStoreLayer({
     id,
-    name: resolvePMTilesLayerName(layerInfo, id),
+    name: layerInfo.name || layerNameFromUrl(layerInfo.url, id),
     url: layerInfo.url,
     // The control also reports "unknown", which it and the map both draw as vector tiles.
     tileType: layerInfo.tileType === "raster" ? "raster" : "vector",

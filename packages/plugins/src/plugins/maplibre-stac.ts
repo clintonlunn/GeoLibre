@@ -4,6 +4,7 @@ import type { FeatureCollection, Geometry } from "geojson";
 import type { GeoJSONSource, MapMouseEvent, Map as MapLibreMap } from "maplibre-gl";
 import type { GeoLibreAppAPI, GeoLibreCogLayerOptions, GeoLibrePlugin } from "../types";
 import { addPMTilesLayerFromUrl } from "./maplibre-components";
+import { renamePMTilesLayer } from "./stac-layers";
 import {
   assetFormat,
   connectStac,
@@ -511,24 +512,23 @@ async function visualizeAsset(
   switch (format) {
     case "pmtiles": {
       if (!appRef) throw new Error(labels.addFailed);
-      // Adds queue behind one another, so an archive can wait its turn past the panel that asked
-      // for it. The control takes no signal, so this is the last point one can be honored.
-      signal?.throwIfAborted();
       // The same door the Source Cooperative browser uses, so an archive reaches the map one way.
-      // It answers false when the control will not mount, which is a failure like any other.
-      if (!(await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, name }))) {
+      // It answers false when the control will not mount, which is a failure like any other. The
+      // signal goes with it: adds queue, so this one can wait past the panel that asked for it.
+      if (!(await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, signal }))) {
         throw new Error(labels.addFailed);
       }
+      renamePMTilesLayer(asset.href, name);
       return;
     }
     case "geojson": {
+      if (!appRef) throw new Error(labels.addFailed);
       const response = await fetch(asset.href, {
         headers: { Accept: "application/geo+json, application/json" },
         signal,
       });
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       const data = (await response.json()) as FeatureCollection;
-      if (!appRef) throw new Error(labels.addFailed);
       appRef.addGeoJsonLayer(name, data, asset.href);
       return;
     }
