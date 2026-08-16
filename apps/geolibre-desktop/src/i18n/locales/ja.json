@@ -3364,6 +3364,7 @@
     "added": "{{asset}} を地図に追加しました。",
     "addUnsupported": "地図に追加できるのは GeoTIFF/COG、GeoJSON、PMTiles のアセットのみです",
     "addFailed": "アセットを追加できませんでした",
+    "addNoSourceLayers": "このアーカイブには描画できるレイヤーがありません",
     "cogUnsupported": "この GeoLibre ホストはリモートの GeoTIFF アセットを表示できません"
   },
   "earthdataGis": {

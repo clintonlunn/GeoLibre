@@ -141,6 +141,7 @@ export interface StacLabels {
   download: string;
   addUnsupported: string;
   addFailed: string;
+  addNoSourceLayers: string;
   cogUnsupported: string;
   showing: (count: number) => string;
   showingOfMatched: (count: number, matched: number) => string;
@@ -213,6 +214,7 @@ let labels: StacLabels = {
   download: "Download",
   addUnsupported: "Only GeoTIFF/COG, GeoJSON, and PMTiles assets can be added to the map",
   addFailed: "Could not add asset",
+  addNoSourceLayers: "This archive lists no layers to draw",
   cogUnsupported: "This GeoLibre host cannot visualize remote GeoTIFF assets",
   showing: (count) => `Showing ${count} items.`,
   showingOfMatched: (count, matched) => `Showing ${count} of ${matched} items.`,
@@ -510,7 +512,10 @@ async function visualizeAsset(
   const format = assetFormat(asset);
   switch (format) {
     case "pmtiles": {
-      await addPMTilesAsset(asset.href, name, signal);
+      // No appRef check: the layer goes to the store, not through the app API.
+      if (!(await addPMTilesAsset(asset.href, name, signal))) {
+        throw new Error(labels.addNoSourceLayers);
+      }
       return;
     }
     case "geojson": {

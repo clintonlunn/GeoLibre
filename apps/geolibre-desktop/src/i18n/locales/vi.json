@@ -3351,6 +3351,7 @@
     "bboxLabel": "Hộp giới hạn (tây, nam, đông, bắc)",
     "addUnsupported": "Chỉ có thể thêm nội dung GeoTIFF/COG, GeoJSON và PMTiles vào bản đồ",
     "addFailed": "Không thể thêm nội dung",
+    "addNoSourceLayers": "Kho lưu trữ này không liệt kê lớp nào để vẽ",
     "cogUnsupported": "Máy chủ GeoLibre này không thể hiển thị nội dung GeoTIFF từ xa",
     "footprintLayerName": "Dấu chân tìm kiếm STAC",
     "catalogSearch": "Tìm danh mục công khai từ STAC Index",

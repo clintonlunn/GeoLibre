@@ -4,10 +4,7 @@ import { fileURLToPath } from "node:url";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { useAppStore } from "@geolibre/core";
 import { isPlaceholderLayer } from "../packages/map/src/placeholders";
-import {
-  addPMTilesAsset,
-  noSourceLayersMessage,
-} from "../packages/plugins/src/plugins/stac-layers";
+import { addPMTilesAsset } from "../packages/plugins/src/plugins/stac-layers";
 
 // The committed z0-4 archive tests/pmtiles-extract.test.ts reads.
 const bytes = new Uint8Array(
@@ -58,15 +55,13 @@ describe("adding a STAC item's PMTiles asset", () => {
     assert.deepEqual(layer.metadata.nativeLayerIds, [`${id}-raster`]);
   });
 
-  it("refuses a vector archive with no layer metadata, rather than adding a placeholder", async () => {
+  it("adds nothing for a vector archive with no layer metadata, and says so to its caller", async () => {
     // Byte 99 is the tile type: 1 is MVT, and the fixture's metadata carries no vector_layers.
     const asVector = bytes.slice();
     asVector[99] = 1;
     globalThis.fetch = rangeServer(asVector);
 
-    await assert.rejects(addPMTilesAsset(HREF, "item-1 — PMTiles vector tiles"), {
-      message: noSourceLayersMessage,
-    });
+    assert.equal(await addPMTilesAsset(HREF, "item-1 — PMTiles vector tiles"), null);
     assert.deepEqual(useAppStore.getState().layers, []);
     globalThis.fetch = rangeServer(bytes);
   });

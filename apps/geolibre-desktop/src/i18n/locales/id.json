@@ -3364,6 +3364,7 @@
     "added": "{{asset}} ditambahkan ke peta.",
     "addUnsupported": "Hanya aset GeoTIFF/COG, GeoJSON, dan PMTiles yang dapat ditambahkan ke peta",
     "addFailed": "Tidak dapat menambahkan aset",
+    "addNoSourceLayers": "Arsip ini tidak mencantumkan lapisan untuk digambar",
     "cogUnsupported": "Host GeoLibre ini tidak dapat memvisualisasikan aset GeoTIFF jarak jauh"
   },
   "earthdataGis": {

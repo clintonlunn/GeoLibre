@@ -709,6 +709,7 @@ export function BasemapExtractPanel({ open, onClose, mapControllerRef }: Basemap
             name: fileName,
             url: layerUrl,
             tileType: info.tileType,
+            ...(info.encoding ? { encoding: info.encoding } : {}),
             sourceLayers: info.sourceLayers,
             // Raster basemaps render dimmed (raster-opacity reads the layer-level
             // `opacity`, not style.fillOpacity); vector renders fully opaque.

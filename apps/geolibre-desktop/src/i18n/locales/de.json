@@ -3420,6 +3420,7 @@
     "added": "{{asset}} zur Karte hinzugefügt.",
     "addUnsupported": "Nur GeoTIFF/COG-, GeoJSON- und PMTiles-Assets können zur Karte hinzugefügt werden",
     "addFailed": "Asset konnte nicht hinzugefügt werden",
+    "addNoSourceLayers": "Dieses Archiv führt keine zeichenbaren Ebenen auf",
     "cogUnsupported": "Dieser GeoLibre-Host kann entfernte GeoTIFF-Assets nicht darstellen"
   },
   "earthdataGis": {

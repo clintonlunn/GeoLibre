@@ -3420,6 +3420,7 @@
     "added": "{{asset}} به نقشه افزوده شد.",
     "addUnsupported": "تنها دارایی‌های GeoTIFF/COG، GeoJSON و PMTiles را می‌توان به نقشه افزود",
     "addFailed": "افزودن دارایی با شکست مواجه شد",
+    "addNoSourceLayers": "این بایگانی هیچ لایه‌ای برای ترسیم فهرست نکرده است",
     "cogUnsupported": "این میزبان GeoLibre نمی‌تواند دارایی‌های GeoTIFF دوردست را نمایش دهد"
   },
   "earthdataGis": {

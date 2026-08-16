@@ -933,6 +933,7 @@ export function TopToolbar({
       added: (asset) => t("stacPlugin.added", { asset }),
       addUnsupported: t("stacPlugin.addUnsupported"),
       addFailed: t("stacPlugin.addFailed"),
+      addNoSourceLayers: t("stacPlugin.addNoSourceLayers"),
       cogUnsupported: t("stacPlugin.cogUnsupported"),
     });
   }, [t]);

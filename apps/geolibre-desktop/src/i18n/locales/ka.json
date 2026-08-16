@@ -3420,6 +3420,7 @@
     "added": "{{asset}} დაემატა რუკაზე.",
     "addUnsupported": "რუკაზე შეიძლება დაემატოს მხოლოდ GeoTIFF/COG, GeoJSON და PMTiles აქტივები",
     "addFailed": "აქტივის დამატება ვერ მოხერხდა",
+    "addNoSourceLayers": "ეს არქივი არ შეიცავს დასახატ ფენებს",
     "cogUnsupported": "ამ GeoLibre ჰოსტს არ შეუძლია დისტანციური GeoTIFF აქტივების ვიზუალიზაცია"
   },
   "earthdataGis": {
