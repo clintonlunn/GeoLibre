@@ -848,9 +848,12 @@ function ensurePMTilesExternalLayer(
         tileSize: 256,
       });
     } else {
+      const encoding = layer.source.encoding;
       map.addSource(sourceId, {
         type: "vector",
         url: tileUrl,
+        // An MLT archive decodes through a different worker path than plain MVT.
+        ...(encoding === "mlt" ? { encoding } : {}),
       });
     }
   }

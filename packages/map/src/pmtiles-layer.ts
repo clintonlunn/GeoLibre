@@ -43,6 +43,8 @@ export interface PMTilesStoreLayerOptions {
   /** The archive, with or without the `pmtiles://` prefix. */
   url: string;
   tileType: "vector" | "raster";
+  /** Passed to MapLibre for a vector source that is not plain MVT. */
+  encoding?: "mvt" | "mlt";
   sourceLayers: readonly string[];
   visible?: boolean;
   opacity?: number;
@@ -76,6 +78,7 @@ export function createPMTilesStoreLayer(options: PMTilesStoreLayerOptions): GeoL
       sourceLayers,
       tileType,
       type: tileType === "raster" ? "raster" : "vector",
+      ...(options.encoding ? { encoding: options.encoding } : {}),
       url,
     },
     sourcePath: url,
@@ -100,6 +103,8 @@ export function createPMTilesStoreLayer(options: PMTilesStoreLayerOptions): GeoL
 /** Facts about a PMTiles archive needed to build a GeoLibre layer for it. */
 export interface PMTilesArchiveInfo {
   tileType: "vector" | "raster";
+  /** How the vector tiles are encoded, when the archive is not plain MVT. */
+  encoding?: "mvt" | "mlt";
   /** Vector-tile layer ids from the archive metadata (empty for raster). */
   sourceLayers: string[];
   /** `[minLon, minLat, maxLon, maxLat]` from the archive header. */
@@ -129,8 +134,9 @@ export function readRemotePMTilesInfo(url: string): Promise<PMTilesArchiveInfo> 
 
 async function readArchive(archive: PMTiles): Promise<PMTilesArchiveInfo> {
   const header = await archive.getHeader();
-  // PMTiles TileType: 1 = MVT (vector); everything else renders as raster.
-  const tileType = header.tileType === 1 ? "vector" : "raster";
+  // PMTiles TileType: 1 = MVT and 6 = MLT are vector; the rest are image formats.
+  const encoding = header.tileType === 6 ? "mlt" : "mvt";
+  const tileType = header.tileType === 1 || header.tileType === 6 ? "vector" : "raster";
   let sourceLayers: string[] = [];
   if (tileType === "vector") {
     try {
@@ -147,6 +153,7 @@ async function readArchive(archive: PMTiles): Promise<PMTilesArchiveInfo> {
   }
   return {
     tileType,
+    ...(encoding === "mlt" ? { encoding } : {}),
     sourceLayers,
     bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
     minZoom: header.minZoom,

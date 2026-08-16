@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { createEmptyProject, parseProject, serializeProject } from "@geolibre/core";
 import {
   createPMTilesStoreLayer,
+  readPMTilesArchiveInfo,
   type PMTilesStoreLayerOptions,
 } from "../packages/map/src/pmtiles-layer";
 import { isPlaceholderLayer } from "../packages/map/src/placeholders";
@@ -96,5 +99,38 @@ describe("createPMTilesStoreLayer", () => {
     });
 
     assert.equal(painted.style.fillColor, "#00ff00");
+  });
+});
+
+describe("reading what an archive holds", () => {
+  // The committed archive, whose header byte 99 is the PMTiles tile type.
+  const bytes = new Uint8Array(
+    readFileSync(fileURLToPath(new URL("./fixtures/mini.pmtiles", import.meta.url))),
+  );
+  const withTileType = (tileType: number): Uint8Array => {
+    const patched = bytes.slice();
+    patched[99] = tileType;
+    return patched;
+  };
+
+  it("reads MVT as a vector archive, and says nothing about encoding", async () => {
+    const info = await readPMTilesArchiveInfo(withTileType(1));
+
+    assert.equal(info.tileType, "vector");
+    assert.equal(info.encoding, undefined);
+  });
+
+  it("reads MLT as a vector archive that MapLibre must decode differently", async () => {
+    const info = await readPMTilesArchiveInfo(withTileType(6));
+
+    assert.equal(info.tileType, "vector");
+    assert.equal(info.encoding, "mlt");
+  });
+
+  it("reads an image tile type as raster", async () => {
+    const info = await readPMTilesArchiveInfo(withTileType(2));
+
+    assert.equal(info.tileType, "raster");
+    assert.equal(info.encoding, undefined);
   });
 });

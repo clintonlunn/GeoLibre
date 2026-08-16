@@ -67,6 +67,27 @@ describe("syncing a layer from createPMTilesStoreLayer", () => {
     }
   });
 
+  it("tells MapLibre when an archive holds MLT rather than MVT tiles", () => {
+    const layer = createPMTilesStoreLayer({ ...archive, encoding: "mlt" });
+    const { map, addedSources } = makeMapStub();
+
+    syncLayer(map as never, layer);
+
+    assert.deepEqual(addedSources[0]?.source, {
+      type: "vector",
+      url: "pmtiles://https://example.org/units.pmtiles",
+      encoding: "mlt",
+    });
+  });
+
+  it("leaves the encoding off a plain MVT archive, which is MapLibre's default", () => {
+    const { map, addedSources } = makeMapStub();
+
+    syncLayer(map as never, createPMTilesStoreLayer(archive));
+
+    assert.deepEqual(Object.keys(addedSources[0]?.source ?? {}), ["type", "url"]);
+  });
+
   it("adds a raster archive as a raster source and its single layer", () => {
     const layer = createPMTilesStoreLayer({ ...archive, tileType: "raster", sourceLayers: [] });
     const { map, addedSources, addedLayers } = makeMapStub();

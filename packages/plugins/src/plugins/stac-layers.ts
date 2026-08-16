@@ -26,6 +26,7 @@ export async function addPMTilesAsset(
       name,
       url: href,
       tileType: info.tileType,
+      ...(info.encoding ? { encoding: info.encoding } : {}),
       sourceLayers: info.sourceLayers,
     }),
   );
