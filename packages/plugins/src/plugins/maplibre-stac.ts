@@ -511,6 +511,9 @@ async function visualizeAsset(
   switch (format) {
     case "pmtiles": {
       if (!appRef) throw new Error(labels.addFailed);
+      // Adds queue behind one another, so an archive can wait its turn past the panel that asked
+      // for it. The control takes no signal, so this is the last point one can be honored.
+      signal?.throwIfAborted();
       // The same door the Source Cooperative browser uses, so an archive reaches the map one way.
       // It answers false when the control will not mount, which is a failure like any other.
       if (!(await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, name }))) {
@@ -525,7 +528,8 @@ async function visualizeAsset(
       });
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       const data = (await response.json()) as FeatureCollection;
-      appRef?.addGeoJsonLayer(name, data, asset.href);
+      if (!appRef) throw new Error(labels.addFailed);
+      appRef.addGeoJsonLayer(name, data, asset.href);
       return;
     }
     case "cog": {
