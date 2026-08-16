@@ -3,7 +3,14 @@
  * import it (`@geolibre/map/pmtiles-layer`) without pulling in MapLibre and its stylesheet.
  */
 import { DEFAULT_LAYER_STYLE, type GeoLibreLayer, type LayerStyle } from "@geolibre/core";
-import { FetchSource, FileSource, PMTiles, type RangeResponse, type Source } from "pmtiles";
+import {
+  FetchSource,
+  FileSource,
+  PMTiles,
+  type RangeResponse,
+  type Source,
+  TileType,
+} from "pmtiles";
 import { encodeVectorTileLayerPart } from "./vector-tile-layer-ids";
 
 export const PMTILES_PROTOCOL = "pmtiles";
@@ -175,9 +182,10 @@ class AbortableSource implements Source {
 
 async function readArchive(archive: PMTiles): Promise<PMTilesArchiveInfo> {
   const header = await archive.getHeader();
-  // PMTiles TileType: 1 = MVT and 6 = MLT are vector; the rest are image formats.
-  const encoding = header.tileType === 6 ? "mlt" : "mvt";
-  const tileType = header.tileType === 1 || header.tileType === 6 ? "vector" : "raster";
+  // Mvt and Mlt are vector; every other tile type is an image format.
+  const encoding = header.tileType === TileType.Mlt ? "mlt" : "mvt";
+  const tileType =
+    header.tileType === TileType.Mvt || header.tileType === TileType.Mlt ? "vector" : "raster";
   let sourceLayers: string[] = [];
   if (tileType === "vector") {
     try {

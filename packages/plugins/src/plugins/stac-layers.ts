@@ -21,6 +21,8 @@ export async function addPMTilesAsset(
   // No source layers means nothing to draw, which would land a placeholder and report success.
   if (info.tileType === "vector" && info.sourceLayers.length === 0) return null;
 
+  // Full opacity, unlike the basemap extract's dimmed raster: an asset added from a search result
+  // is the thing the user asked to look at, not a backdrop.
   const id = createLayerId();
   useAppStore.getState().addLayer(
     createPMTilesStoreLayer({
