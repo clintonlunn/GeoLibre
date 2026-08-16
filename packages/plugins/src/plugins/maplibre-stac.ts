@@ -899,8 +899,14 @@ function buildPanel(container: HTMLElement): () => void {
       .catch(() => undefined);
   }
 
-  async function runSearch(append: boolean, generation = ++searchGeneration): Promise<void> {
+  /**
+   * `generation` says which search this is, so a late answer can tell whether it is still wanted.
+   * The caller may take it first, when it has its own late answer to check; taking it here would
+   * mean it moves on a call that does nothing.
+   */
+  async function runSearch(append: boolean, generation?: number): Promise<void> {
     if (!connection) return;
+    const search = generation ?? ++searchGeneration;
 
     searchButton.disabled = true;
     loadMore.disabled = true;
@@ -926,7 +932,7 @@ function buildPanel(container: HTMLElement): () => void {
       const response = connection.isApi
         ? await searchStacApi(connection, options)
         : await searchStaticStac(connection, options);
-      if (generation !== searchGeneration) return;
+      if (search !== searchGeneration) return;
       allItems = append ? [...allItems, ...response.items] : response.items;
       nextPage = response.next;
       searchCursor = response.cursor;
@@ -941,7 +947,7 @@ function buildPanel(container: HTMLElement): () => void {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : labels.searchFailed, true);
     } finally {
-      if (generation === searchGeneration) {
+      if (search === searchGeneration) {
         searchButton.disabled = false;
         loadMore.disabled = false;
       }
