@@ -549,11 +549,6 @@ export function itemBbox(item: StacItem): [number, number, number, number] | und
   return horizontalBbox(item.bbox);
 }
 
-/**
- * The formats the panel can put on the map: a marker within the asset's media type, and the
- * extension to fall back on when a catalog leaves the type off or writes it as octet-stream.
- * Tested in order, so a format whose extension another could claim comes first.
- */
 /** A format {@link assetFormat} recognizes, and {@link visualizeAsset} knows how to add. */
 export type StacAssetFormat = "pmtiles" | "geojson" | "cog";
 
@@ -561,9 +556,11 @@ interface AssetFormatRule {
   format: StacAssetFormat;
   /** Matched within the asset's media type, which catalogs write with varying parameters. */
   mediaType: string;
+  /** Read only when no rule's media type matched, for a catalog that omits the type. */
   extension: RegExp;
 }
 
+/** The formats the panel can put on the map, and the two ways an asset can name each of them. */
 const VISUALIZABLE_FORMATS: readonly AssetFormatRule[] = [
   { format: "pmtiles", mediaType: "pmtiles", extension: /\.pmtiles($|\?)/i },
   { format: "geojson", mediaType: "geo+json", extension: /\.geojson($|\?)/i },
