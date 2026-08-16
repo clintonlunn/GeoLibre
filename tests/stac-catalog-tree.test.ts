@@ -642,6 +642,14 @@ test("a collection that holds collections can be closed and opened again", async
     click(landsat);
     await settle();
     assert.equal(box.hidden, true, "and so can a click");
+    // Collapsing is browsing, not un-choosing: a search must not silently widen to the whole
+    // catalog because the user tidied the tree.
+    assert.deepEqual(tree.selection(), ["https://example.com/Landsat.json"]);
+
+    // Ctrl-click is still how a row is let go of.
+    click(landsat, true);
+    await settle();
+    assert.deepEqual(tree.selection(), []);
   });
 });
 

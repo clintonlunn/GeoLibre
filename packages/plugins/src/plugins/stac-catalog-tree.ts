@@ -240,9 +240,12 @@ export function buildCatalogTree(options: CatalogTreeOptions): CatalogTree {
       // whatever it holds can be reached: Maxar's events are collections of collections, and a
       // link alone cannot say so. The search reads the same document moments later.
       if (kind === "collection") {
+        // Once such a row is chosen, a click browses what it holds rather than un-choosing it —
+        // collapsing a folder must not quietly widen the next search back to the whole catalog.
+        // Ctrl/Cmd-click still lets go of it, as it does anywhere else.
+        if (!additive && self.children.length && selected.has(row)) return expand(!self.open);
         select(node.href, row, additive);
-        if (self.children.length) return expand(!self.open);
-        void reveal(false, additive);
+        if (!loaded) void reveal(false, additive);
         return;
       }
       if (loaded) return expand(!self.open);
