@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { useAppStore } from "@geolibre/core";
 import { isPlaceholderLayer } from "../packages/map/src/placeholders";
-import { addPMTilesAsset } from "../packages/plugins/src/plugins/stac-layers";
+import {
+  addPMTilesAsset,
+  noSourceLayersMessage,
+} from "../packages/plugins/src/plugins/stac-layers";
 
 // The committed z0-4 archive tests/pmtiles-extract.test.ts reads.
 const bytes = new Uint8Array(
@@ -13,15 +16,15 @@ const bytes = new Uint8Array(
 const HREF = "https://example.org/warehouse/mini.pmtiles";
 
 /** Serves the fixture over Range requests, so the reader behaves as it does against a real host. */
-function rangeServer(): typeof fetch {
+function rangeServer(served: Uint8Array = bytes): typeof fetch {
   return (async (_url, init) => {
     const range = /bytes=(\d+)-(\d+)/.exec(String(new Headers(init?.headers).get("range") ?? ""));
     assert.ok(range, "reading an archive must send a Range header");
     const start = Number(range[1]);
-    const end = Math.min(Number(range[2]), bytes.length - 1);
-    return new Response(bytes.slice(start, end + 1) as unknown as BodyInit, {
+    const end = Math.min(Number(range[2]), served.length - 1);
+    return new Response(served.slice(start, end + 1) as unknown as BodyInit, {
       status: 206,
-      headers: { "content-range": `bytes ${start}-${end}/${bytes.length}` },
+      headers: { "content-range": `bytes ${start}-${end}/${served.length}` },
     });
   }) as typeof fetch;
 }
@@ -53,6 +56,19 @@ describe("adding a STAC item's PMTiles asset", () => {
     // The fixture holds PNG tiles, so it lands on the raster path.
     assert.equal(layer.metadata.tileType, "raster");
     assert.deepEqual(layer.metadata.nativeLayerIds, [`${id}-raster`]);
+  });
+
+  it("refuses a vector archive with no layer metadata, rather than adding a placeholder", async () => {
+    // Byte 99 is the tile type: 1 is MVT, and the fixture's metadata carries no vector_layers.
+    const asVector = bytes.slice();
+    asVector[99] = 1;
+    globalThis.fetch = rangeServer(asVector);
+
+    await assert.rejects(addPMTilesAsset(HREF, "item-1 — PMTiles vector tiles"), {
+      message: noSourceLayersMessage,
+    });
+    assert.deepEqual(useAppStore.getState().layers, []);
+    globalThis.fetch = rangeServer(bytes);
   });
 
   it("adds nothing when the panel was closed while the header was in flight", async () => {

@@ -510,7 +510,6 @@ async function visualizeAsset(
   const format = assetFormat(asset);
   switch (format) {
     case "pmtiles": {
-      if (!appRef) throw new Error(labels.addFailed);
       await addPMTilesAsset(asset.href, name, signal);
       return;
     }

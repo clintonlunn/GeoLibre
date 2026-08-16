@@ -10,6 +10,10 @@ import { createLayerId } from "../layer-ids";
  * which layer it produced. Reading the header here is a range request, and the layer shape still
  * comes from {@link createPMTilesStoreLayer}.
  */
+/** Shown when an archive carries no layer metadata, so the panel says why nothing was added. */
+export const noSourceLayersMessage =
+  "This PMTiles archive lists no vector layers, so there is nothing to draw.";
+
 export async function addPMTilesAsset(
   href: string,
   name: string,
@@ -18,6 +22,11 @@ export async function addPMTilesAsset(
   signal?.throwIfAborted();
   const info = await readRemotePMTilesInfo(href);
   signal?.throwIfAborted();
+
+  // No source layers means nothing to draw, which would land a placeholder and report success.
+  if (info.tileType === "vector" && info.sourceLayers.length === 0) {
+    throw new Error(noSourceLayersMessage);
+  }
 
   const id = createLayerId();
   useAppStore.getState().addLayer(
