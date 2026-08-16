@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   browserAssetHref,
   connectStac,
+  assetFormat,
   isVisualizableAsset,
   itemBbox,
   openCatalogNode,
@@ -1137,6 +1138,34 @@ test("a document that never reads leaves the search without a total", async () =
   assert.deepEqual(ids, ["good"]);
   // The dead child's subtree went unread, so "1 of 1" would overstate what was searched.
   assert.equal(result.matched, undefined);
+});
+
+test("an asset's format comes from its media type, or its extension when there is none", async () => {
+  // The registered type is what a catalog following the spec sends; the extension covers the
+  // ones that send nothing useful.
+  assert.equal(
+    assetFormat({ href: "https://example.com/a.pmtiles", type: "application/vnd.pmtiles" }),
+    "pmtiles",
+  );
+  assert.equal(assetFormat({ href: "https://example.com/a.PMTILES" }), "pmtiles");
+  assert.equal(assetFormat({ href: "https://example.com/a.pmtiles?token=1" }), "pmtiles");
+  assert.equal(assetFormat({ href: "https://example.com/tiles?id=7&f=pmtiles" }), null);
+  assert.equal(assetFormat({ href: "https://example.com/a.tif", type: "image/tiff" }), "cog");
+  assert.equal(
+    assetFormat({ href: "https://example.com/a.json", type: "application/geo+json" }),
+    "geojson",
+  );
+  assert.equal(assetFormat({ href: "https://example.com/data.bin" }), null);
+
+  // A catalog that stores its archives under a directory named for another format is read by
+  // what the asset is, not by what the path says.
+  assert.equal(assetFormat({ href: "https://example.com/geotiff/a.pmtiles" }), "pmtiles");
+
+  // Which is the same answer that decides whether Add is enabled.
+  assert.equal(
+    isVisualizableAsset({ href: "https://example.com/a.pmtiles", type: "application/vnd.pmtiles" }),
+    true,
+  );
 });
 
 test("asset and bbox helpers recognize common STAC data", () => {

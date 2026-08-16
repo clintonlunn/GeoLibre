@@ -549,12 +549,35 @@ export function itemBbox(item: StacItem): [number, number, number, number] | und
   return horizontalBbox(item.bbox);
 }
 
+/**
+ * The formats the panel can put on the map: a marker within the asset's media type, and the
+ * extension to fall back on when a catalog leaves the type off or writes it as octet-stream.
+ * Tested in order, so a format whose extension another could claim comes first.
+ */
+const VISUALIZABLE_FORMATS = {
+  pmtiles: { mediaType: "pmtiles", extension: /\.pmtiles($|\?)/i },
+  geojson: { mediaType: "geo+json", extension: /\.geojson($|\?)/i },
+  cog: { mediaType: "geotiff", extension: /\.tiff?($|\?)/i },
+} as const;
+
+/** A format {@link assetFormat} recognizes, and {@link visualizeAsset} knows how to add. */
+export type StacAssetFormat = keyof typeof VISUALIZABLE_FORMATS;
+
+/**
+ * Which format an asset is, or null when the panel cannot draw it. The single answer both the
+ * enabled state of Add and the routing behind it read, so the button and the click cannot
+ * disagree about what a catalog is offering.
+ */
+export function assetFormat(asset: StacAsset): StacAssetFormat | null {
+  const mediaType = (asset.type ?? "").toLowerCase();
+  for (const [format, match] of Object.entries(VISUALIZABLE_FORMATS)) {
+    if (mediaType.includes(match.mediaType) || match.extension.test(asset.href)) {
+      return format as StacAssetFormat;
+    }
+  }
+  return null;
+}
+
 export function isVisualizableAsset(asset: StacAsset): boolean {
-  const value = `${asset.type ?? ""} ${asset.href}`.toLowerCase();
-  return (
-    value.includes("geotiff") ||
-    /\.tiff?($|\?)/i.test(asset.href) ||
-    value.includes("geo+json") ||
-    /\.geojson($|\?)/i.test(asset.href)
-  );
+  return assetFormat(asset) !== null;
 }
