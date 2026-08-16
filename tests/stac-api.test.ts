@@ -385,6 +385,54 @@ test("openCatalogNode gives up when the search that asked for it is called off",
   );
 });
 
+test("a search the caller abandons stops reading", async () => {
+  // A static catalog has no index, so a walk opens documents to answer a filter. One nobody is
+  // waiting for should stop rather than read its way to the page budget.
+  const controller = new AbortController();
+  let reads = 0;
+  const docs: Record<string, unknown> = {
+    "https://example.com/stac/catalog.json": {
+      type: "Catalog",
+      links: Array.from({ length: 60 }, (_value, index) => ({
+        rel: "item",
+        href: `./item-${index}.json`,
+      })),
+    },
+  };
+  for (let index = 0; index < 60; index += 1) {
+    docs[`https://example.com/stac/item-${index}.json`] = {
+      type: "Feature",
+      id: `i${index}`,
+      collection: "c",
+      // Nothing matches, so the walk would otherwise read every one of them.
+      bbox: [100, 40, 101, 41],
+      geometry: null,
+      properties: { datetime: "2024-05-01T00:00:00Z" },
+      assets: {},
+    };
+  }
+  const fetcher = (async (input: RequestInfo | URL) => {
+    reads += 1;
+    if (reads > 12) controller.abort();
+    return jsonResponse(docs[String(input)]);
+  }) as typeof fetch;
+
+  const result = await searchStaticStac(
+    {
+      url: "https://example.com/stac/catalog.json",
+      title: "Static",
+      isApi: false,
+      collections: [],
+      root: docs["https://example.com/stac/catalog.json"] as Record<string, unknown>,
+    },
+    { limit: 20, bbox: [-1, -1, 1, 1], signal: controller.signal },
+    fetcher,
+  );
+
+  assert.deepEqual(result.items, []);
+  assert.ok(reads < 40, `stopped early, having read ${reads} of 60`);
+});
+
 test("a search keeps the collection filter it began with as later pages arrive", async () => {
   // The tree's selection can change between Load more clicks; the filter must not follow it, or
   // one accumulated list ends up filtered two ways.

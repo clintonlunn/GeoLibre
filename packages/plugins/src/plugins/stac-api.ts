@@ -525,6 +525,8 @@ export async function searchStaticStac(
   };
 
   while (found.length < limit && reads < STATIC_SEARCH_READS_PER_PAGE) {
+    // Abandoned: stop, rather than read to the budget and count each cancelled read as a failure.
+    if (options.signal?.aborted) break;
     const batch = takeBatch();
     if (!batch.length) break;
     reads += batch.length;

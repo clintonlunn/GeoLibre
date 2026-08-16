@@ -676,6 +676,8 @@ function buildPanel(container: HTMLElement): () => void {
   let searchCursor: StacSearchCursor | undefined;
   let allItems: StacItem[] = [];
   let searchGeneration = 0;
+  /** The walk a search is doing; starting another stops it, since a static walk reads to find. */
+  let walking: AbortController | null = null;
   /** The extent read a collection asked for, cancelled when another collection is asked for. */
   let extentRead: AbortController | null = null;
   let cancelDraw: (() => void) | null = null;
@@ -923,6 +925,9 @@ function buildPanel(container: HTMLElement): () => void {
       const start = startField.input.value;
       const end = endField.input.value;
       const datetime = start || end ? `${start || ".."}/${end || ".."}` : undefined;
+      walking?.abort();
+      walking = new AbortController();
+      const reading = AbortSignal.any([walking.signal, controller.signal]);
       const options = {
         bbox: parseBbox(),
         datetime,
@@ -932,7 +937,7 @@ function buildPanel(container: HTMLElement): () => void {
         limit: 20,
         next: append ? nextPage : undefined,
         cursor: append ? searchCursor : undefined,
-        signal: controller.signal,
+        signal: reading,
       };
       const response = connection.isApi
         ? await searchStacApi(connection, options)
