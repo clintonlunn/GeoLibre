@@ -15,8 +15,7 @@ export async function addPMTilesAsset(
   name: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  signal?.throwIfAborted();
-  const info = await readRemotePMTilesInfo(href);
+  const info = await readRemotePMTilesInfo(href, signal);
   signal?.throwIfAborted();
 
   // No source layers means nothing to draw, which would land a placeholder and report success.

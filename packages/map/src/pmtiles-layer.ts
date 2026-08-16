@@ -3,7 +3,7 @@
  * import it (`@geolibre/map/pmtiles-layer`) without pulling in MapLibre and its stylesheet.
  */
 import { DEFAULT_LAYER_STYLE, type GeoLibreLayer, type LayerStyle } from "@geolibre/core";
-import { FileSource, PMTiles } from "pmtiles";
+import { FetchSource, FileSource, PMTiles, type RangeResponse, type Source } from "pmtiles";
 import { encodeVectorTileLayerPart } from "./vector-tile-layer-ids";
 
 export const PMTILES_PROTOCOL = "pmtiles";
@@ -137,8 +137,40 @@ export function readPMTilesArchiveInfo(bytes: Uint8Array): Promise<PMTilesArchiv
  * The same facts for an archive that stays where it is. The header and metadata are range
  * requests, so this costs a few kilobytes rather than the whole file.
  */
-export function readRemotePMTilesInfo(url: string): Promise<PMTilesArchiveInfo> {
-  return readArchive(new PMTiles(url));
+export function readRemotePMTilesInfo(
+  url: string,
+  signal?: AbortSignal,
+): Promise<PMTilesArchiveInfo> {
+  return readArchive(new PMTiles(signal ? new AbortableSource(url, signal) : url));
+}
+
+/**
+ * A source's `getBytes` takes a signal, but the header and metadata reads above it never pass one,
+ * so a caller's signal has no way in. Wrapping the library's own source carries it down without
+ * reimplementing its ETag, 416 and content-length handling.
+ */
+class AbortableSource implements Source {
+  private readonly inner: FetchSource;
+
+  constructor(
+    url: string,
+    private readonly signal: AbortSignal,
+  ) {
+    this.inner = new FetchSource(url);
+  }
+
+  getKey(): string {
+    return this.inner.getKey();
+  }
+
+  getBytes(
+    offset: number,
+    length: number,
+    signal?: AbortSignal,
+    etag?: string,
+  ): Promise<RangeResponse> {
+    return this.inner.getBytes(offset, length, signal ?? this.signal, etag);
+  }
 }
 
 async function readArchive(archive: PMTiles): Promise<PMTilesArchiveInfo> {

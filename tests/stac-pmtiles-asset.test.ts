@@ -66,12 +66,21 @@ describe("adding a STAC item's PMTiles asset", () => {
     globalThis.fetch = rangeServer(bytes);
   });
 
-  it("adds nothing when the panel was closed while the header was in flight", async () => {
+  it("hands the caller's signal to the read, not a fresh one of the reader's", async () => {
+    // The reader makes its own controller when given none, so the question is whose signal
+    // arrives: an already-aborted one only turns up if the caller's was carried down.
+    const arrived: boolean[] = [];
+    globalThis.fetch = (async (_url, init) => {
+      arrived.push(init?.signal?.aborted ?? false);
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    }) as typeof fetch;
+
     const controller = new AbortController();
-    const adding = addPMTilesAsset(HREF, "item-1 — PMTiles vector tiles", controller.signal);
     controller.abort();
 
-    await assert.rejects(adding);
+    await assert.rejects(addPMTilesAsset(HREF, "item-1 — PMTiles vector tiles", controller.signal));
+    assert.deepEqual(arrived, [true]);
     assert.deepEqual(useAppStore.getState().layers, []);
+    globalThis.fetch = rangeServer();
   });
 });
