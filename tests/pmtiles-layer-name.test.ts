@@ -43,6 +43,24 @@ describe("naming a PMTiles layer a caller asked for", () => {
     assert.equal(resolvePMTilesLayerName(info, "layer-1"), "units");
   });
 
+  it("keeps each concurrent add's own name when both are for the same archive", () => {
+    const info = layerInfo();
+    setPendingPMTilesName(info.url, "first item");
+    setPendingPMTilesName(info.url, "second item");
+
+    assert.equal(resolvePMTilesLayerName(info, "layer-1"), "first item");
+    assert.equal(resolvePMTilesLayerName(info, "layer-2"), "second item");
+  });
+
+  it("drops only the cancelled add's name, leaving the other in the queue", () => {
+    const info = layerInfo();
+    const clearFirst = setPendingPMTilesName(info.url, "first item");
+    setPendingPMTilesName(info.url, "second item");
+    clearFirst();
+
+    assert.equal(resolvePMTilesLayerName(info, "layer-1"), "second item");
+  });
+
   it("keeps the control's own name when the caller supplied none", () => {
     assert.equal(
       resolvePMTilesLayerName(layerInfo({ name: "Named by the panel" }), "layer-1"),

@@ -4781,29 +4781,34 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
   };
 }
 
-// Names handed to addPMTilesLayerFromUrl, keyed by archive URL. The control's own `addLayer(url)`
+// Names handed to addPMTilesLayerFromUrl, queued per archive URL. The control's own `addLayer(url)`
 // takes no name, so a caller that has a better one than the file name (a STAC item and its asset,
-// say) leaves it here for the `layeradd` that follows.
-const pendingPMTilesNames = new Map<string, string>();
+// say) leaves it here for the `layeradd` that follows. A queue rather than a single entry because
+// two adds of the same archive would otherwise take each other's name.
+const pendingPMTilesNames = new Map<string, { name: string }[]>();
 
 /**
  * @internal Exported only so the programmatic-name handoff can be unit-tested. Returns a disposer,
  * so an add that never reaches `layeradd` (a broken archive) leaves nothing behind.
  */
 export function setPendingPMTilesName(url: string, name: string): () => void {
-  pendingPMTilesNames.set(url, name);
+  const queue = pendingPMTilesNames.get(url) ?? [];
+  const pending = { name };
+  queue.push(pending);
+  pendingPMTilesNames.set(url, queue);
   return () => {
-    pendingPMTilesNames.delete(url);
+    const index = queue.indexOf(pending);
+    if (index >= 0) queue.splice(index, 1);
+    if (queue.length === 0) pendingPMTilesNames.delete(url);
   };
 }
 
 /** @internal Exported only so the programmatic-name handoff can be unit-tested. */
 export function resolvePMTilesLayerName(layerInfo: PMTilesLayerInfo, id: string): string {
-  const pending = pendingPMTilesNames.get(layerInfo.url);
-  if (pending !== undefined) {
-    pendingPMTilesNames.delete(layerInfo.url);
-    return pending;
-  }
+  const queue = pendingPMTilesNames.get(layerInfo.url);
+  const pending = queue?.shift();
+  if (queue?.length === 0) pendingPMTilesNames.delete(layerInfo.url);
+  if (pending) return pending.name;
   return layerInfo.name || layerNameFromUrl(layerInfo.url, id);
 }
 

@@ -510,8 +510,9 @@ async function visualizeAsset(
   const format = assetFormat(asset);
   switch (format) {
     case "pmtiles": {
+      if (!appRef) throw new Error(labels.addFailed);
       // The same door the Source Cooperative browser uses, so an archive reaches the map one way.
-      if (appRef) await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, name });
+      await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, name });
       return;
     }
     case "geojson": {
