@@ -6,6 +6,7 @@ import {
   setExternalNativePaintBridge,
   useAppStore,
 } from "@geolibre/core";
+import { createPMTilesStoreLayer } from "@geolibre/map/pmtiles-layer";
 import type {
   QueryGeometry,
   QueryOptions,
@@ -1743,13 +1744,15 @@ export function openPMTilesLayerPanel(app: GeoLibreAppAPI): void {
  *
  * @param app - The GeoLibre app API.
  * @param url - An http(s) URL to a `.pmtiles` archive.
+ * @param options.name - Layer name, for a caller that knows better than the file name. The
+ *   control's own `addLayer` takes none, so it reaches the layer through the `layeradd` handler.
  * @returns True when the archive was added.
  * @throws If the archive could not be loaded (unreachable, not PMTiles, 403).
  */
 export async function addPMTilesLayerFromUrl(
   app: GeoLibreAppAPI,
   url: string,
-  options: { fit?: boolean } = {},
+  options: { fit?: boolean; name?: string } = {},
 ): Promise<boolean> {
   const { PMTilesLayerControl: PMTilesLayerControlClass } = await getComponentsConstructors();
 
@@ -1790,9 +1793,12 @@ export async function addPMTilesLayerFromUrl(
   };
   map?.on("movestart", onMoveStart);
   map?.on("moveend", onMoveEnd);
+  const clearPendingName =
+    options.name === undefined ? undefined : setPendingPMTilesName(url, options.name);
   try {
     await pmtilesControl.addLayer(url);
   } finally {
+    clearPendingName?.();
     // Preserve a host user's camera interaction that happened while the archive
     // header was loading, rather than restoring the older pre-load position.
     if (userMoving) camera = readCamera();
@@ -4775,6 +4781,32 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
   };
 }
 
+// Names handed to addPMTilesLayerFromUrl, keyed by archive URL. The control's own `addLayer(url)`
+// takes no name, so a caller that has a better one than the file name (a STAC item and its asset,
+// say) leaves it here for the `layeradd` that follows.
+const pendingPMTilesNames = new Map<string, string>();
+
+/**
+ * @internal Exported only so the programmatic-name handoff can be unit-tested. Returns a disposer,
+ * so an add that never reaches `layeradd` (a broken archive) leaves nothing behind.
+ */
+export function setPendingPMTilesName(url: string, name: string): () => void {
+  pendingPMTilesNames.set(url, name);
+  return () => {
+    pendingPMTilesNames.delete(url);
+  };
+}
+
+/** @internal Exported only so the programmatic-name handoff can be unit-tested. */
+export function resolvePMTilesLayerName(layerInfo: PMTilesLayerInfo, id: string): string {
+  const pending = pendingPMTilesNames.get(layerInfo.url);
+  if (pending !== undefined) {
+    pendingPMTilesNames.delete(layerInfo.url);
+    return pending;
+  }
+  return layerInfo.name || layerNameFromUrl(layerInfo.url, id);
+}
+
 function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
   return (event) => {
     if (!event.layerId) return;
@@ -4782,7 +4814,7 @@ function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
     if (!layerInfo) return;
 
     const store = useAppStore.getState();
-    const layer = createPMTilesStoreLayer(event.layerId, layerInfo);
+    const layer = pmtilesStoreLayer(event.layerId, layerInfo);
     if (store.layers.some((item) => item.id === layer.id)) {
       store.updateLayer(layer.id, {
         metadata: layer.metadata,
@@ -5389,43 +5421,22 @@ function createGeoTiffRasterStoreLayer(state: GeoTiffRasterLayerState): GeoLibre
   };
 }
 
-function createPMTilesStoreLayer(id: string, layerInfo: PMTilesLayerInfo): GeoLibreLayer {
-  const firstSourceLayer = layerInfo.sourceLayers[0];
-  const fillColor =
-    (firstSourceLayer && layerInfo.sourceLayerColors?.[firstSourceLayer]) ??
-    DEFAULT_LAYER_STYLE.fillColor;
-
-  return {
+/** @internal Exported only so the control's layer shape can be unit-tested. */
+export function pmtilesStoreLayer(id: string, layerInfo: PMTilesLayerInfo): GeoLibreLayer {
+  return createPMTilesStoreLayer({
     id,
-    name: layerInfo.name || layerNameFromUrl(layerInfo.url, id),
-    type: "pmtiles",
-    source: {
-      sourceId: layerInfo.id,
-      sourceLayers: layerInfo.sourceLayers,
-      tileType: layerInfo.tileType,
-      type: layerInfo.tileType === "raster" ? "raster" : "vector",
-      url: layerInfo.url,
-    },
-    visible: true,
+    name: resolvePMTilesLayerName(layerInfo, id),
+    url: layerInfo.url,
+    // The control also reports "unknown", which it and the map both draw as vector tiles.
+    tileType: layerInfo.tileType === "raster" ? "raster" : "vector",
+    sourceLayers: layerInfo.sourceLayers,
     opacity: layerInfo.opacity,
-    style: {
-      ...DEFAULT_LAYER_STYLE,
-      fillOpacity: layerInfo.tileType === "raster" ? 0.6 : 1,
-      fillColor,
-      strokeColor: fillColor,
-    },
-    metadata: {
-      externalNativeLayer: true,
-      nativeLayerIds: layerInfo.layerIds,
-      pickable: layerInfo.pickable,
-      sourceId: layerInfo.id,
-      sourceKind: "pmtiles-url",
-      sourceLayerColors: layerInfo.sourceLayerColors,
-      sourceLayers: layerInfo.sourceLayers,
-      tileType: layerInfo.tileType,
-    },
-    sourcePath: layerInfo.url,
-  };
+    style: { fillOpacity: layerInfo.tileType === "raster" ? 0.6 : 1 },
+    pickable: layerInfo.pickable,
+    // The control created these MapLibre layers itself, so its ids stand rather than derived ones.
+    nativeLayerIds: layerInfo.layerIds,
+    ...(layerInfo.sourceLayerColors ? { sourceLayerColors: layerInfo.sourceLayerColors } : {}),
+  });
 }
 
 function createZarrStoreLayer(id: string, layerInfo: ZarrLayerInfo): GeoLibreLayer {

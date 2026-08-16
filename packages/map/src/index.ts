@@ -70,13 +70,17 @@ export {
 export {
   ensureRemotePMTilesArchive,
   hasPMTilesArchive,
-  pmtilesNativeLayerIds,
   readPMTilesArchiveInfo,
   registerPMTilesArchive,
   unregisterPMTilesArchive,
   setExternalDeckLayerOrderHandler,
   type PMTilesArchiveInfo,
 } from "./layer-sync";
+export {
+  createPMTilesStoreLayer,
+  pmtilesNativeLayerIds,
+  type PMTilesStoreLayerOptions,
+} from "./pmtiles-layer";
 export {
   buildMapboxStyle,
   mapboxStyleToJson,

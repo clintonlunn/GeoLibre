@@ -14,6 +14,8 @@ import {
   styleValue,
   validateMapExpression,
 } from "@geolibre/core";
+import { normalizePMTilesUrl, PMTILES_PROTOCOL, pmtilesVectorLayerId } from "./pmtiles-layer";
+import { encodeVectorTileLayerPart } from "./vector-tile-layer-ids";
 import { addProtocol, config } from "maplibre-gl";
 import type { GeoJSON } from "geojson";
 import type * as maplibregl from "maplibre-gl";
@@ -101,7 +103,6 @@ export function setExternalDeckLayerOrderHandler(
 }
 
 const WMS_PROXY_PATH = "/__geolibre_wms_proxy";
-const PMTILES_PROTOCOL = "pmtiles";
 const PMTILES_PROTOCOL_GLOBAL_KEY = "__geolibrePMTilesProtocol";
 const PMTILES_ARCHIVE_KEYS_GLOBAL_KEY = "__geolibrePMTilesArchiveKeys";
 const MIN_LAYER_ZOOM = DEFAULT_LAYER_STYLE.minZoom;
@@ -967,26 +968,6 @@ function ensurePMTilesProtocol(url: string): void {
   }
 }
 
-/**
- * The MapLibre layer ids `syncLayers` creates for a `pmtiles` store layer, in
- * the exact naming scheme `ensurePMTilesExternalLayer` uses. A layer built
- * outside the PMTiles control (e.g. the offline basemap extract dialog) must
- * put these in `metadata.nativeLayerIds` — a non-empty list is what marks the
- * layer renderable rather than a placeholder.
- */
-export function pmtilesNativeLayerIds(
-  sourceId: string,
-  tileType: "vector" | "raster",
-  sourceLayers: readonly string[],
-): string[] {
-  if (tileType === "raster") {
-    return [`${sourceId}-raster`];
-  }
-  return sourceLayers.flatMap((sourceLayer) =>
-    ["fill", "line", "circle"].map((kind) => pmtilesVectorLayerId(sourceId, sourceLayer, kind)),
-  );
-}
-
 /** Facts about a PMTiles archive needed to build a GeoLibre layer for it. */
 export interface PMTilesArchiveInfo {
   tileType: "vector" | "raster";
@@ -1129,10 +1110,6 @@ function isMapLibreProtocolRegistered(): boolean {
   );
 }
 
-function normalizePMTilesUrl(url: string): string {
-  return url.startsWith(`${PMTILES_PROTOCOL}://`) ? url : `${PMTILES_PROTOCOL}://${url}`;
-}
-
 function stripPMTilesProtocol(url: string): string {
   return url.startsWith(`${PMTILES_PROTOCOL}://`)
     ? url.slice(`${PMTILES_PROTOCOL}://`.length)
@@ -1170,10 +1147,6 @@ function hasPMTilesNativeSourceLayer(
   return ["fill", "line", "circle"].some((kind) =>
     nativeLayerIds.includes(pmtilesVectorLayerId(sourceId, sourceLayer, kind)),
   );
-}
-
-function pmtilesVectorLayerId(sourceId: string, sourceLayer: string, kind: string): string {
-  return `${sourceId}-${encodeVectorTileLayerPart(sourceLayer)}-${kind}`;
 }
 
 function getPMTilesSourceLayers(layer: GeoLibreLayer): string[] {
@@ -3327,10 +3300,6 @@ function removeStaleMbtilesLayers(
 }
 
 function encodeMbtilesLayerPart(value: string): string {
-  return encodeURIComponent(value).replaceAll("%", "_");
-}
-
-function encodeVectorTileLayerPart(value: string): string {
   return encodeURIComponent(value).replaceAll("%", "_");
 }
 
