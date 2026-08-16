@@ -1811,7 +1811,7 @@ async function addPMTilesLayerNow(
   // The control emits `layeradd` synchronously while adding, so the handler has already spent this
   // name by the time the await returns; the disposer is for the archive that throws before it.
   const clearPendingName =
-    options.name === undefined ? undefined : setPendingPMTilesName(options.name);
+    options.name === undefined ? undefined : setPendingPMTilesName(url, options.name);
   try {
     await pmtilesControl.addLayer(url);
   } finally {
@@ -4800,25 +4800,28 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
 
 // A name handed to addPMTilesLayerFromUrl, waiting for the `layeradd` it belongs to. The control's
 // own `addLayer(url)` takes no name, so a caller with a better one than the file name (a STAC item
-// and its asset, say) leaves it here. Adds are serialized, so only one is ever pending.
-let pendingPMTilesName: string | null = null;
+// and its asset, say) leaves it here. Adds through this module are serialized, so only one is ever
+// pending; it carries its archive so a layer the control's own panel adds meanwhile cannot take it.
+let pendingPMTiles: { url: string; name: string } | null = null;
 
 /**
  * @internal Exported for tests. Returns a disposer, so an add that never reaches `layeradd` (a
  * broken archive) leaves nothing behind it.
  */
-export function setPendingPMTilesName(name: string): () => void {
-  pendingPMTilesName = name;
+export function setPendingPMTilesName(url: string, name: string): () => void {
+  pendingPMTiles = { url, name };
   return () => {
-    pendingPMTilesName = null;
+    pendingPMTiles = null;
   };
 }
 
 /** @internal Spends the pending name, falling back to the control's own and then the file name. */
 export function resolvePMTilesLayerName(layerInfo: PMTilesLayerInfo, id: string): string {
-  const pending = pendingPMTilesName;
-  pendingPMTilesName = null;
-  return pending || layerInfo.name || layerNameFromUrl(layerInfo.url, id);
+  const fallback = layerInfo.name || layerNameFromUrl(layerInfo.url, id);
+  if (pendingPMTiles?.url !== layerInfo.url) return fallback;
+  const { name } = pendingPMTiles;
+  pendingPMTiles = null;
+  return name || fallback;
 }
 
 function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
