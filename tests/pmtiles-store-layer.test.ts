@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createEmptyProject, parseProject, serializeProject } from "@geolibre/core";
-import { createPMTilesStoreLayer } from "../packages/map/src/pmtiles-layer";
+import {
+  createPMTilesStoreLayer,
+  type PMTilesStoreLayerOptions,
+} from "../packages/map/src/pmtiles-layer";
 import { isPlaceholderLayer } from "../packages/map/src/placeholders";
 
-const archive = {
+const archive: PMTilesStoreLayerOptions = {
   id: "layer-1",
   name: "Geologic units",
   url: "https://example.org/units.pmtiles",
-  tileType: "vector" as const,
+  tileType: "vector",
   sourceLayers: ["units"],
 };
 

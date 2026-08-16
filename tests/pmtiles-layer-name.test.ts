@@ -8,10 +8,16 @@ import {
 
 function layerInfo(patch: Partial<PMTilesLayerInfo> = {}): PMTilesLayerInfo {
   return {
+    id: "pmtiles-1",
     url: "https://example.org/warehouse/units.pmtiles",
     name: "",
+    tileType: "vector",
+    sourceLayers: ["units"],
+    layerIds: ["pmtiles-1-units-fill"],
+    opacity: 1,
+    pickable: true,
     ...patch,
-  } as PMTilesLayerInfo;
+  };
 }
 
 describe("naming a PMTiles layer a caller asked for", () => {
@@ -59,6 +65,13 @@ describe("naming a PMTiles layer a caller asked for", () => {
     clearFirst();
 
     assert.equal(resolvePMTilesLayerName(info, "layer-1"), "second item");
+  });
+
+  it("falls back when a caller queues an empty name, rather than naming the layer nothing", () => {
+    const info = layerInfo({ name: "Named by the panel" });
+    setPendingPMTilesName(info.url, "");
+
+    assert.equal(resolvePMTilesLayerName(info, "layer-1"), "Named by the panel");
   });
 
   it("keeps the control's own name when the caller supplied none", () => {

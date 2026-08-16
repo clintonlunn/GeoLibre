@@ -1161,6 +1161,16 @@ test("an asset's format comes from its media type, or its extension when there i
   // what the asset is, not by what the path says.
   assert.equal(assetFormat({ href: "https://example.com/geotiff/a.pmtiles" }), "pmtiles");
 
+  // And a declared media type wins over any extension, whichever format each of them names.
+  assert.equal(
+    assetFormat({ href: "https://example.com/a.pmtiles", type: "application/geo+json" }),
+    "geojson",
+  );
+  assert.equal(
+    assetFormat({ href: "https://example.com/a.geojson", type: "application/vnd.pmtiles" }),
+    "pmtiles",
+  );
+
   // Which is the same answer that decides whether Add is enabled.
   assert.equal(
     isVisualizableAsset({ href: "https://example.com/a.pmtiles", type: "application/vnd.pmtiles" }),

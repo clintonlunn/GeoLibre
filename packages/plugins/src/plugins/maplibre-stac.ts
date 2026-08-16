@@ -512,7 +512,10 @@ async function visualizeAsset(
     case "pmtiles": {
       if (!appRef) throw new Error(labels.addFailed);
       // The same door the Source Cooperative browser uses, so an archive reaches the map one way.
-      await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, name });
+      // It answers false when the control will not mount, which is a failure like any other.
+      if (!(await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, name }))) {
+        throw new Error(labels.addFailed);
+      }
       return;
     }
     case "geojson": {

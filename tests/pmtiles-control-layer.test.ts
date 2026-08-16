@@ -16,7 +16,7 @@ function controlLayer(patch: Partial<PMTilesLayerInfo> = {}): PMTilesLayerInfo {
     opacity: 0.8,
     pickable: true,
     ...patch,
-  } as PMTilesLayerInfo;
+  };
 }
 
 describe("the store layer the PMTiles control's layeradd produces", () => {

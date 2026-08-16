@@ -4808,7 +4808,7 @@ export function resolvePMTilesLayerName(layerInfo: PMTilesLayerInfo, id: string)
   const queue = pendingPMTilesNames.get(layerInfo.url);
   const pending = queue?.shift();
   if (queue?.length === 0) pendingPMTilesNames.delete(layerInfo.url);
-  if (pending) return pending.name;
+  if (pending?.name) return pending.name;
   return layerInfo.name || layerNameFromUrl(layerInfo.url, id);
 }
 

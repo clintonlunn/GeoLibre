@@ -554,14 +554,21 @@ export function itemBbox(item: StacItem): [number, number, number, number] | und
  * extension to fall back on when a catalog leaves the type off or writes it as octet-stream.
  * Tested in order, so a format whose extension another could claim comes first.
  */
-const VISUALIZABLE_FORMATS = {
-  pmtiles: { mediaType: "pmtiles", extension: /\.pmtiles($|\?)/i },
-  geojson: { mediaType: "geo+json", extension: /\.geojson($|\?)/i },
-  cog: { mediaType: "geotiff", extension: /\.tiff?($|\?)/i },
-} as const;
-
 /** A format {@link assetFormat} recognizes, and {@link visualizeAsset} knows how to add. */
-export type StacAssetFormat = keyof typeof VISUALIZABLE_FORMATS;
+export type StacAssetFormat = "pmtiles" | "geojson" | "cog";
+
+interface AssetFormatRule {
+  format: StacAssetFormat;
+  /** Matched within the asset's media type, which catalogs write with varying parameters. */
+  mediaType: string;
+  extension: RegExp;
+}
+
+const VISUALIZABLE_FORMATS: readonly AssetFormatRule[] = [
+  { format: "pmtiles", mediaType: "pmtiles", extension: /\.pmtiles($|\?)/i },
+  { format: "geojson", mediaType: "geo+json", extension: /\.geojson($|\?)/i },
+  { format: "cog", mediaType: "geotiff", extension: /\.tiff?($|\?)/i },
+];
 
 /**
  * Which format an asset is, or null when the panel cannot draw it. The single answer both the
@@ -570,12 +577,13 @@ export type StacAssetFormat = keyof typeof VISUALIZABLE_FORMATS;
  */
 export function assetFormat(asset: StacAsset): StacAssetFormat | null {
   const mediaType = (asset.type ?? "").toLowerCase();
-  for (const [format, match] of Object.entries(VISUALIZABLE_FORMATS)) {
-    if (mediaType.includes(match.mediaType) || match.extension.test(asset.href)) {
-      return format as StacAssetFormat;
-    }
-  }
-  return null;
+
+  // Every declared media type outranks every extension: a catalog that calls a `.pmtiles` href
+  // GeoJSON is describing its own asset, and reading the extension first would overrule it.
+  const declared = VISUALIZABLE_FORMATS.find((rule) => mediaType.includes(rule.mediaType));
+  if (declared) return declared.format;
+
+  return VISUALIZABLE_FORMATS.find((rule) => rule.extension.test(asset.href))?.format ?? null;
 }
 
 export function isVisualizableAsset(asset: StacAsset): boolean {
