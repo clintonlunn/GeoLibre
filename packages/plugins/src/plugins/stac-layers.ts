@@ -1,15 +1,33 @@
 import { useAppStore } from "@geolibre/core";
+import { createPMTilesStoreLayer, readRemotePMTilesInfo } from "@geolibre/map/pmtiles-layer";
+import { createLayerId } from "../layer-ids";
 
 /**
- * Give the layer the control just made the item and asset it came from. The control names a layer
- * after its file, and takes no name of its own, so the panel that asked for it renames it after.
- * The control adds the layer while `addLayer` runs, so it is in the store by the time this runs; if
- * a future version defers that, the layer keeps its file name rather than taking a wrong one.
+ * Add a STAC item's PMTiles asset as a layer.
+ *
+ * Not through the PMTiles control: it is a singleton that holds the archive it is loading on
+ * itself and reports the outcome through shared state, so a caller cannot tell which add failed or
+ * which layer it produced. Reading the header here is a range request, and the layer shape still
+ * comes from {@link createPMTilesStoreLayer}.
  */
-export function renamePMTilesLayer(href: string, name: string): void {
-  const store = useAppStore.getState();
-  const added = store.layers.find(
-    (layer) => layer.type === "pmtiles" && layer.source.url === `pmtiles://${href}`,
+export async function addPMTilesAsset(
+  href: string,
+  name: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  signal?.throwIfAborted();
+  const info = await readRemotePMTilesInfo(href);
+  signal?.throwIfAborted();
+
+  const id = createLayerId();
+  useAppStore.getState().addLayer(
+    createPMTilesStoreLayer({
+      id,
+      name,
+      url: href,
+      tileType: info.tileType,
+      sourceLayers: info.sourceLayers,
+    }),
   );
-  if (added) store.updateLayer(added.id, { name });
+  return id;
 }

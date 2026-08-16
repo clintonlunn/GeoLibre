@@ -1141,8 +1141,7 @@ test("a document that never reads leaves the search without a total", async () =
 });
 
 test("an asset's format comes from its media type, or its extension when there is none", async () => {
-  // The registered type is what a catalog following the spec sends; the extension covers the
-  // ones that send nothing useful.
+  // The registered type is what a spec-following catalog sends; the extension covers the rest.
   assert.equal(
     assetFormat({ href: "https://example.com/a.pmtiles", type: "application/vnd.pmtiles" }),
     "pmtiles",
@@ -1157,11 +1156,10 @@ test("an asset's format comes from its media type, or its extension when there i
   );
   assert.equal(assetFormat({ href: "https://example.com/data.bin" }), null);
 
-  // A catalog that stores its archives under a directory named for another format is read by
-  // what the asset is, not by what the path says.
+  // Archives under a directory named for another format are read by the asset, not the path.
   assert.equal(assetFormat({ href: "https://example.com/geotiff/a.pmtiles" }), "pmtiles");
 
-  // And a declared media type wins over any extension, whichever format each of them names.
+  // A declared media type wins over any extension, whichever format each names.
   assert.equal(
     assetFormat({ href: "https://example.com/a.pmtiles", type: "application/geo+json" }),
     "geojson",
@@ -1171,7 +1169,6 @@ test("an asset's format comes from its media type, or its extension when there i
     "pmtiles",
   );
 
-  // Which is the same answer that decides whether Add is enabled.
   assert.equal(
     isVisualizableAsset({ href: "https://example.com/a.pmtiles", type: "application/vnd.pmtiles" }),
     true,

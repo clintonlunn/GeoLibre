@@ -568,15 +568,14 @@ const VISUALIZABLE_FORMATS: readonly AssetFormatRule[] = [
 ];
 
 /**
- * Which format an asset is, or null when the panel cannot draw it. The single answer both the
- * enabled state of Add and the routing behind it read, so the button and the click cannot
- * disagree about what a catalog is offering.
+ * Which format an asset is, or null when the panel cannot draw it. Both the enabled state of Add
+ * and the routing behind it read this, so the button and the click cannot disagree.
  */
 export function assetFormat(asset: StacAsset): StacAssetFormat | null {
   const mediaType = (asset.type ?? "").toLowerCase();
 
-  // Every declared media type outranks every extension: a catalog that calls a `.pmtiles` href
-  // GeoJSON is describing its own asset, and reading the extension first would overrule it.
+  // Every declared media type outranks every extension: a catalog calling a `.pmtiles` href
+  // GeoJSON is describing its own asset.
   const declared = VISUALIZABLE_FORMATS.find((rule) => mediaType.includes(rule.mediaType));
   if (declared) return declared.format;
 

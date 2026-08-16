@@ -7,7 +7,6 @@ import {
   useAppStore,
 } from "@geolibre/core";
 import { createPMTilesStoreLayer } from "@geolibre/map/pmtiles-layer";
-import { createTaskQueue } from "../task-queue";
 import type {
   QueryGeometry,
   QueryOptions,
@@ -1748,28 +1747,11 @@ export function openPMTilesLayerPanel(app: GeoLibreAppAPI): void {
  * @returns True when the archive was added.
  * @throws If the archive could not be loaded (unreachable, not PMTiles, 403).
  */
-export function addPMTilesLayerFromUrl(
+export async function addPMTilesLayerFromUrl(
   app: GeoLibreAppAPI,
   url: string,
-  options: { fit?: boolean; signal?: AbortSignal } = {},
+  options: { fit?: boolean } = {},
 ): Promise<boolean> {
-  return pmtilesAdds(() => addPMTilesLayerNow(app, url, options));
-}
-
-/**
- * The control holds the URL it is loading on itself and reads it back after awaiting the header,
- * so two adds in flight together read each other's. Every add takes its turn instead.
- */
-const pmtilesAdds = createTaskQueue();
-
-async function addPMTilesLayerNow(
-  app: GeoLibreAppAPI,
-  url: string,
-  options: { fit?: boolean; signal?: AbortSignal },
-): Promise<boolean> {
-  // Checked here rather than only before queueing: a caller can wait behind other adds, and the
-  // panel that asked for this one may be gone by the time its turn comes.
-  options.signal?.throwIfAborted();
   const { PMTilesLayerControl: PMTilesLayerControlClass } = await getComponentsConstructors();
 
   pmtilesControl ??= createPMTilesControl(PMTilesLayerControlClass);

@@ -3,8 +3,7 @@ import { fillLayerId, lineLayerId } from "@geolibre/map";
 import type { FeatureCollection, Geometry } from "geojson";
 import type { GeoJSONSource, MapMouseEvent, Map as MapLibreMap } from "maplibre-gl";
 import type { GeoLibreAppAPI, GeoLibreCogLayerOptions, GeoLibrePlugin } from "../types";
-import { addPMTilesLayerFromUrl } from "./maplibre-components";
-import { renamePMTilesLayer } from "./stac-layers";
+import { addPMTilesAsset } from "./stac-layers";
 import {
   assetFormat,
   connectStac,
@@ -512,13 +511,7 @@ async function visualizeAsset(
   switch (format) {
     case "pmtiles": {
       if (!appRef) throw new Error(labels.addFailed);
-      // The same door the Source Cooperative browser uses, so an archive reaches the map one way.
-      // It answers false when the control will not mount, which is a failure like any other. The
-      // signal goes with it: adds queue, so this one can wait past the panel that asked for it.
-      if (!(await addPMTilesLayerFromUrl(appRef, asset.href, { fit: false, signal }))) {
-        throw new Error(labels.addFailed);
-      }
-      renamePMTilesLayer(asset.href, name);
+      await addPMTilesAsset(asset.href, name, signal);
       return;
     }
     case "geojson": {

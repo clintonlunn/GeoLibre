@@ -968,53 +968,6 @@ function ensurePMTilesProtocol(url: string): void {
   }
 }
 
-/** Facts about a PMTiles archive needed to build a GeoLibre layer for it. */
-export interface PMTilesArchiveInfo {
-  tileType: "vector" | "raster";
-  /** Vector-tile layer ids from the archive metadata (empty for raster). */
-  sourceLayers: string[];
-  /** `[minLon, minLat, maxLon, maxLat]` from the archive header. */
-  bounds: [number, number, number, number];
-  minZoom: number;
-  maxZoom: number;
-}
-
-/**
- * Reads the header (and, for vector archives, the metadata's `vector_layers`)
- * of an in-memory PMTiles archive, so callers can construct a properly-shaped
- * `pmtiles` store layer for it.
- */
-export async function readPMTilesArchiveInfo(bytes: Uint8Array): Promise<PMTilesArchiveInfo> {
-  const file = new File([bytes as BlobPart], "archive.pmtiles", {
-    type: "application/octet-stream",
-  });
-  const archive = new PMTiles(new FileSource(file));
-  const header = await archive.getHeader();
-  // PMTiles TileType: 1 = MVT (vector); everything else renders as raster.
-  const tileType = header.tileType === 1 ? "vector" : "raster";
-  let sourceLayers: string[] = [];
-  if (tileType === "vector") {
-    try {
-      const metadata = (await archive.getMetadata()) as {
-        vector_layers?: Array<{ id?: unknown }>;
-      };
-      sourceLayers = (metadata.vector_layers ?? [])
-        .map((layer) => layer.id)
-        .filter((id): id is string => typeof id === "string" && id.length > 0);
-    } catch {
-      // Metadata is optional; a vector archive without it still renders once
-      // the user knows its layer names.
-    }
-  }
-  return {
-    tileType,
-    sourceLayers,
-    bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
-    minZoom: header.minZoom,
-    maxZoom: header.maxZoom,
-  };
-}
-
 /**
  * Registers an in-memory PMTiles archive (e.g. an offline basemap extract)
  * under a synthetic key so store layers can reference it like any remote

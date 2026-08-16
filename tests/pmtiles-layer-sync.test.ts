@@ -56,8 +56,7 @@ describe("syncing a layer from createPMTilesStoreLayer", () => {
       id: "layer-1",
       source: { type: "vector", url: "pmtiles://https://example.org/units.pmtiles" },
     });
-    // The ids the builder promised are exactly the ones the sync creates: a layer whose
-    // nativeLayerIds name something else renders nothing while claiming it renders.
+    // A layer whose nativeLayerIds name something else renders nothing while claiming it does.
     assert.deepEqual(
       addedLayers.map((added) => added.id),
       layer.metadata.nativeLayerIds,

@@ -78,15 +78,16 @@ export {
 export {
   ensureRemotePMTilesArchive,
   hasPMTilesArchive,
-  readPMTilesArchiveInfo,
   registerPMTilesArchive,
   unregisterPMTilesArchive,
   setExternalDeckLayerOrderHandler,
-  type PMTilesArchiveInfo,
 } from "./layer-sync";
 export {
   createPMTilesStoreLayer,
   pmtilesNativeLayerIds,
+  readPMTilesArchiveInfo,
+  readRemotePMTilesInfo,
+  type PMTilesArchiveInfo,
   type PMTilesStoreLayerOptions,
 } from "./pmtiles-layer";
 export {
