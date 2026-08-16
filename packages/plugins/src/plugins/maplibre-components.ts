@@ -7,6 +7,7 @@ import {
   useAppStore,
 } from "@geolibre/core";
 import { createPMTilesStoreLayer } from "@geolibre/map/pmtiles-layer";
+import { createTaskQueue } from "../task-queue";
 import type {
   QueryGeometry,
   QueryOptions,
@@ -1749,10 +1750,24 @@ export function openPMTilesLayerPanel(app: GeoLibreAppAPI): void {
  * @returns True when the archive was added.
  * @throws If the archive could not be loaded (unreachable, not PMTiles, 403).
  */
-export async function addPMTilesLayerFromUrl(
+export function addPMTilesLayerFromUrl(
   app: GeoLibreAppAPI,
   url: string,
   options: { fit?: boolean; name?: string } = {},
+): Promise<boolean> {
+  return pmtilesAdds(() => addPMTilesLayerNow(app, url, options));
+}
+
+/**
+ * The control holds the URL it is loading on itself and reads it back after awaiting the header,
+ * so two adds in flight together read each other's. Every add takes its turn instead.
+ */
+const pmtilesAdds = createTaskQueue();
+
+async function addPMTilesLayerNow(
+  app: GeoLibreAppAPI,
+  url: string,
+  options: { fit?: boolean; name?: string },
 ): Promise<boolean> {
   const { PMTilesLayerControl: PMTilesLayerControlClass } = await getComponentsConstructors();
 
@@ -1796,7 +1811,7 @@ export async function addPMTilesLayerFromUrl(
   // The control emits `layeradd` synchronously while adding, so the handler has already spent this
   // name by the time the await returns; the disposer is for the archive that throws before it.
   const clearPendingName =
-    options.name === undefined ? undefined : setPendingPMTilesName(url, options.name);
+    options.name === undefined ? undefined : setPendingPMTilesName(options.name);
   try {
     await pmtilesControl.addLayer(url);
   } finally {
@@ -4783,35 +4798,27 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
   };
 }
 
-// Names handed to addPMTilesLayerFromUrl, queued per archive URL. The control's own `addLayer(url)`
-// takes no name, so a caller that has a better one than the file name (a STAC item and its asset,
-// say) leaves it here for the `layeradd` that follows. A queue rather than a single entry because
-// two adds of the same archive would otherwise take each other's name.
-const pendingPMTilesNames = new Map<string, { name: string }[]>();
+// A name handed to addPMTilesLayerFromUrl, waiting for the `layeradd` it belongs to. The control's
+// own `addLayer(url)` takes no name, so a caller with a better one than the file name (a STAC item
+// and its asset, say) leaves it here. Adds are serialized, so only one is ever pending.
+let pendingPMTilesName: string | null = null;
 
 /**
  * @internal Exported for tests. Returns a disposer, so an add that never reaches `layeradd` (a
- * broken archive) leaves nothing queued behind it.
+ * broken archive) leaves nothing behind it.
  */
-export function setPendingPMTilesName(url: string, name: string): () => void {
-  const queue = pendingPMTilesNames.get(url) ?? [];
-  const pending = { name };
-  queue.push(pending);
-  pendingPMTilesNames.set(url, queue);
+export function setPendingPMTilesName(name: string): () => void {
+  pendingPMTilesName = name;
   return () => {
-    const index = queue.indexOf(pending);
-    if (index >= 0) queue.splice(index, 1);
-    if (queue.length === 0) pendingPMTilesNames.delete(url);
+    pendingPMTilesName = null;
   };
 }
 
-/** @internal Spends a queued name, falling back to the control's own and then the file name. */
+/** @internal Spends the pending name, falling back to the control's own and then the file name. */
 export function resolvePMTilesLayerName(layerInfo: PMTilesLayerInfo, id: string): string {
-  const queue = pendingPMTilesNames.get(layerInfo.url);
-  const pending = queue?.shift();
-  if (queue?.length === 0) pendingPMTilesNames.delete(layerInfo.url);
-  if (pending?.name) return pending.name;
-  return layerInfo.name || layerNameFromUrl(layerInfo.url, id);
+  const pending = pendingPMTilesName;
+  pendingPMTilesName = null;
+  return pending || layerInfo.name || layerNameFromUrl(layerInfo.url, id);
 }
 
 function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
