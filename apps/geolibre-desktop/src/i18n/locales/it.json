@@ -3411,7 +3411,7 @@
     "download": "Scarica",
     "adding": "Aggiunta di {{asset}}…",
     "added": "{{asset}} aggiunto alla mappa.",
-    "addUnsupported": "Solo le risorse GeoTIFF/COG e GeoJSON possono essere aggiunte alla mappa",
+    "addUnsupported": "Solo le risorse GeoTIFF/COG, GeoJSON e PMTiles possono essere aggiunte alla mappa",
     "addFailed": "Impossibile aggiungere la risorsa",
     "cogUnsupported": "Questo host GeoLibre non può visualizzare risorse GeoTIFF remote"
   },

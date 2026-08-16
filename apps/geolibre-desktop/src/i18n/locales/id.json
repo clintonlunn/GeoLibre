@@ -3355,7 +3355,7 @@
     "download": "Unduh",
     "adding": "Menambahkan {{asset}}…",
     "added": "{{asset}} ditambahkan ke peta.",
-    "addUnsupported": "Hanya aset GeoTIFF/COG dan GeoJSON yang dapat ditambahkan ke peta",
+    "addUnsupported": "Hanya aset GeoTIFF/COG, GeoJSON, dan PMTiles yang dapat ditambahkan ke peta",
     "addFailed": "Tidak dapat menambahkan aset",
     "cogUnsupported": "Host GeoLibre ini tidak dapat memvisualisasikan aset GeoTIFF jarak jauh"
   },
