@@ -34,7 +34,7 @@ import {
   withItemBounds,
   zarrCrs,
   zarrLayerRequest,
-  zarrStoreIsReadable,
+  zarrTargetIsArray,
   zarrStoreTakesKeys,
   zarrStorePath,
 } from "./stac-api";
@@ -703,14 +703,17 @@ async function visualizeAsset(
       if (isIcechunkAsset(asset)) throw new Error(labels.addIcechunk);
       const variable = target ?? assetTargets(item, key, asset)[0]?.id;
       if (!variable) throw new Error(labels.addNoTarget);
-      const href = await readableHref(item, asset.href);
-      const { url } = zarrStorePath(href);
-      // A signed store is read key by key, and the token cannot survive being followed by one.
-      if (!zarrStoreTakesKeys(url) || !(await zarrStoreIsReadable(url, fetch, signal))) {
+      // Deliberately unsigned: a store is read key by key, and a token in the URL cannot survive
+      // being followed by one. A private container therefore fails the check below and says so.
+      const { url } = zarrStorePath(asset.href);
+      if (!zarrStoreTakesKeys(url) || !(await zarrTargetIsArray(url, variable, fetch, signal))) {
         throw new Error(labels.addZarrUnreadable);
       }
       const crs = zarrCrs(item, asset);
-      const request = zarrLayerRequest(href, variable, { ...cogOptions, ...(crs ? { crs } : {}) });
+      const request = zarrLayerRequest(asset.href, variable, {
+        ...cogOptions,
+        ...(crs ? { crs } : {}),
+      });
       const layerId = await addZarrRasterLayer(appRef, {
         ...request,
         name: `${name} — ${variable}`,
@@ -1145,12 +1148,15 @@ function buildPanel(container: HTMLElement): () => void {
           const [key, asset] = selected();
           const addable = canAddAsset(item, key, asset);
           const targets = assetTargets(item, key, asset);
+          // Rebuilt on every sync, including the one right after Add, so keep the user's pick.
+          const chosen = targetSelect.value;
           targetSelect.innerHTML = "";
           for (const target of targets) {
             const option = el("option", target.label);
             option.value = target.id;
             targetSelect.append(option);
           }
+          if (targets.some((target) => target.id === chosen)) targetSelect.value = chosen;
           // One target is the asset itself; hide a choice the user does not have.
           targetSelect.hidden = targets.length < 2 || !addable;
           assetSelect.title = asset.href;

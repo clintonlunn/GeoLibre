@@ -312,13 +312,11 @@ function folderName(href: string): string {
 function catalogChildren(document: Record<string, unknown>, base: string): StacCatalogNode[] {
   return linksOf(document.links, base)
     .filter((link) => link.rel === "child")
-    .map(
-      (link): StacCatalogNode => ({
-        href: link.href,
-        title: link.title || folderName(link.href),
-        kind: /\/collection\.json($|[?#])/i.test(link.href) ? "collection" : "container",
-      }),
-    );
+    .map((link): StacCatalogNode => ({
+      href: link.href,
+      title: link.title || folderName(link.href),
+      kind: /\/collection\.json($|[?#])/i.test(link.href) ? "collection" : "container",
+    }));
 }
 
 /**
@@ -907,24 +905,28 @@ export function withItemBounds(
   return bounds ? { ...metadata, bounds } : metadata;
 }
 
-/** The documents a Zarr store keeps at its root, v3 first. */
-const ZARR_ROOT_KEYS = ["zarr.json", ".zmetadata", ".zgroup"];
+/** What a readable array answers to: v3 metadata first, then the v2 spelling. */
+const ZARR_ARRAY_KEYS = ["zarr.json", ".zarray"];
 
 /**
- * Whether a Zarr store can actually be opened, by asking for the metadata every store must have.
- * The renderer reports a store it cannot read through an event rather than by failing the call,
- * so without this the panel says an asset was added while nothing is drawn — which is what an
- * Icechunk repository, a CORS-blocked host, or a half-written export all look like.
+ * Whether a variable really is a drawable array in the store. Asking for the array's own metadata
+ * settles three things in one request: the store is reachable, the path exists, and it is an array
+ * rather than a group — EOPF keys an asset to `.../r10m`, which holds four bands and draws nothing.
  */
-export async function zarrStoreIsReadable(
-  url: string,
+export async function zarrTargetIsArray(
+  store: string,
+  variable: string,
   fetcher: FetchLike = fetch,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  for (const key of ZARR_ROOT_KEYS) {
+  for (const key of ZARR_ARRAY_KEYS) {
     try {
-      const response = await fetcher(storeKeyUrl(url, key), { signal });
-      if (response.ok) return true;
+      const response = await fetcher(storeKeyUrl(store, `${variable}/${key}`), { signal });
+      if (!response.ok) continue;
+      // `.zarray` exists only for an array; v3 says which it is.
+      if (key === ".zarray") return true;
+      const metadata = (await response.json()) as { node_type?: string };
+      return metadata?.node_type !== "group";
     } catch (error) {
       // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
       if (error instanceof DOMException && error.name === "AbortError") throw error;

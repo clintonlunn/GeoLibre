@@ -19,7 +19,7 @@ import {
   type StacItem,
   zarrCrs,
   zarrLayerRequest,
-  zarrStoreIsReadable,
+  zarrTargetIsArray,
   zarrStoreTakesKeys,
   zarrStorePath,
   zarrTargets,
@@ -1753,42 +1753,43 @@ test("a Zarr layer records the item's extent, so Zoom to layer has somewhere to 
   assert.deepEqual(withItemBounds({ tileType: "raster" }, item()), { tileType: "raster" });
 });
 
-test("a Zarr store is only added once its own metadata answers", async () => {
+test("a Zarr variable is only added once the store says it is an array", async () => {
   const asked: string[] = [];
-  const serving = (present: string) =>
+  const serving = (bodies: Record<string, unknown>) =>
     (async (url: string) => {
       asked.push(String(url));
-      return new Response(String(url).endsWith(present) ? "{}" : "", {
-        status: String(url).endsWith(present) ? 200 : 404,
-      });
+      const match = Object.entries(bodies).find(([key]) => String(url).endsWith(key));
+      return match
+        ? new Response(JSON.stringify(match[1]), { status: 200 })
+        : new Response("", { status: 404 });
     }) as unknown as typeof fetch;
 
-  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", serving("zarr.json")), true);
-  // v3 first, so a v2 store costs one extra request rather than being missed.
-  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", serving(".zgroup")), true);
-  // A trailing slash must not double up into `a.zarr//zarr.json`.
-  await zarrStoreIsReadable("https://example.com/a.zarr/", serving("zarr.json"));
-  assert.ok(asked.every((url) => !url.includes(".zarr//")));
+  const store = "https://example.com/a.zarr";
+  // v3 names what it is, so a group is refused and an array accepted.
+  assert.equal(
+    await zarrTargetIsArray(store, "sst", serving({ "sst/zarr.json": { node_type: "array" } })),
+    true,
+  );
+  assert.equal(
+    await zarrTargetIsArray(store, "r10m", serving({ "r10m/zarr.json": { node_type: "group" } })),
+    false,
+  );
+  // v2 has no node type: `.zarray` exists for arrays only, and groups carry `.zgroup` instead.
+  assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/.zarray": {} })), true);
+  assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/.zgroup": {} })), false);
 
-  // A query stays a query: `a.zarr?sig=x/zarr.json` would be a path the host has never heard of.
-  const queried: string[] = [];
-  await zarrStoreIsReadable("https://example.com/a.zarr?sig=x", (async (url: string) => {
-    queried.push(String(url));
-    return new Response("{}", { status: 200 });
-  }) as unknown as typeof fetch);
-  assert.deepEqual(queried, ["https://example.com/a.zarr/zarr.json?sig=x"]);
+  // A query stays a query: `a.zarr?sig=x/sst/zarr.json` would be a path no host has heard of.
+  asked.length = 0;
+  await zarrTargetIsArray("https://example.com/a.zarr?sig=x", "sst", serving({}));
+  assert.ok(asked.every((url) => url.includes("?sig=x") && !url.includes("?sig=x/")));
 
-  // An Icechunk repository, or a half-written export: none of the root documents exist.
-  const missing = (async () => new Response("", { status: 404 })) as typeof fetch;
-  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", missing), false);
-
-  // A CORS-blocked host rejects rather than answering, and must not be retried key by key.
+  // A blocked host rejects rather than answering, and must not be retried key by key.
   const blocked: string[] = [];
   const rejecting = (async (url: string) => {
     blocked.push(String(url));
     throw new TypeError("Failed to fetch");
   }) as unknown as typeof fetch;
-  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", rejecting), false);
+  assert.equal(await zarrTargetIsArray(store, "sst", rejecting), false);
   assert.equal(blocked.length, 1);
 });
 
