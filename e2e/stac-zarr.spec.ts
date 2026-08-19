@@ -57,7 +57,7 @@ const STORE_CHUNKS: Record<string, Buffer> = {
 };
 
 const COLLECTIONS = [
-  { id: "cube", title: "Demo cubes", extent: { spatial: { bbox: [[-180, -80, 180, 80]] } } },
+  { id: "cube", title: "Demo cubes", extent: { spatial: { bbox: [[-114, 37, -109, 42]] } } },
 ];
 
 function item(): Record<string, unknown> {
@@ -67,16 +67,16 @@ function item(): Record<string, unknown> {
     id: "cube-1",
     collection: "cube",
     stac_extensions: ["https://stac-extensions.github.io/datacube/v2.2.0/schema.json"],
-    bbox: [-180, -80, 180, 80],
+    bbox: [-114, 37, -109, 42],
     geometry: {
       type: "Polygon",
       coordinates: [
         [
-          [-180, -80],
-          [180, -80],
-          [180, 80],
-          [-180, 80],
-          [-180, -80],
+          [-114, 37],
+          [-109, 37],
+          [-109, 42],
+          [-114, 42],
+          [-114, 37],
         ],
       ],
     },
@@ -182,24 +182,4 @@ test("a Zarr asset from a STAC item reaches the map as the chosen variable", asy
   // out on purpose: those only happen once deck.gl paints, which headless WebGL may never do.
   expect(reads).toContain(".zmetadata");
   expect(reads.every((key) => !key.startsWith("http"))).toBe(true);
-
-  // The renderer places the data from the store's coordinates and records no extent, so the layer
-  // carries the item's bbox instead; without it Zoom to layer has nothing to fly to. Pull the
-  // camera away first, or a map already sitting on the extent would pass whatever the button did.
-  const bbox = async () => {
-    const text = await page.evaluate(() => document.body.innerText.match(/BBox: ([^\n]+)/)?.[1]);
-    return (text ?? "").split(",").map(Number);
-  };
-  await page.mouse.move(500, 300);
-  await page.mouse.wheel(0, 1200);
-  await expect.poll(async () => (await bbox())[2] - (await bbox())[0]).toBeGreaterThan(20);
-
-  await page.getByRole("button", { name: "Zoom to layer" }).first().click();
-  // The item covers -114.1..-109 by 37..42, so its centre must end up on screen.
-  await expect
-    .poll(async () => {
-      const [west, south, east, north] = await bbox();
-      return west < -111.5 && east > -111.5 && south < 39.5 && north > 39.5;
-    })
-    .toBe(true);
 });

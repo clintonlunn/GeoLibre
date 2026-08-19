@@ -3433,6 +3433,7 @@
     "addNoSourceLayers": "This archive lists no layers to draw",
     "addNoTarget": "This asset lists nothing to draw",
     "addIcechunk": "Icechunk stores cannot be read yet",
+    "addZarrUnreadable": "This Zarr store could not be opened",
     "chooseTarget": "Choose what to add",
     "cogUnsupported": "This GeoLibre host cannot visualize remote GeoTIFF assets",
     "formatCog": "COG",

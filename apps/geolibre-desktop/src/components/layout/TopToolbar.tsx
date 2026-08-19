@@ -944,6 +944,7 @@ export function TopToolbar({
       formatUnknown: t("stacPlugin.formatUnknown"),
       addNoTarget: t("stacPlugin.addNoTarget"),
       addIcechunk: t("stacPlugin.addIcechunk"),
+      addZarrUnreadable: t("stacPlugin.addZarrUnreadable"),
       chooseTarget: t("stacPlugin.chooseTarget"),
       notAddable: t("stacPlugin.notAddable"),
     });

@@ -15,8 +15,11 @@ import {
   canAddAsset,
   isIcechunkAsset,
   requiresTarget,
+  withItemBounds,
   type StacItem,
+  zarrCrs,
   zarrLayerRequest,
+  zarrStoreIsReadable,
   zarrStorePath,
   zarrTargets,
 } from "../packages/plugins/src/plugins/stac-api";
@@ -1504,6 +1507,99 @@ test("a Zarr layer request carries the store, the array, and the panel's raster 
     zarrLayerRequest(inside, "measurements/reflectance/r10m/b02").url,
     "https://objects.eodc.eu/bucket/S2C.zarr",
   );
+});
+
+test("a projected Zarr store carries its CRS, and WGS84 stays implicit", () => {
+  const item = (properties: Record<string, unknown>): StacItem => ({
+    type: "Feature",
+    id: "item",
+    geometry: null,
+    properties,
+    assets: {},
+  });
+  const asset = { href: "https://example.com/a.zarr", type: "application/vnd+zarr" };
+
+  // EOPF puts the code on the asset; other catalogs put it on the item or the cube dimensions.
+  assert.equal(zarrCrs(item({}), { ...asset, "proj:code": "epsg:32632" }), "EPSG:32632");
+  assert.equal(zarrCrs(item({}), { ...asset, "proj:epsg": 32633 }), "EPSG:32633");
+  assert.equal(zarrCrs(item({ "proj:code": "EPSG:5070" }), asset), "EPSG:5070");
+  assert.equal(
+    zarrCrs(
+      item({
+        "cube:dimensions": {
+          x: { type: "spatial", reference_system: 32612 },
+          time: { type: "temporal", reference_system: 4326 },
+        },
+      }),
+      asset,
+    ),
+    "EPSG:32612",
+  );
+  assert.equal(zarrCrs(item({}), asset), undefined);
+  // A code the renderer already assumes would be noise in the request.
+  assert.deepEqual(zarrLayerRequest("https://example.com/a.zarr", "t", { crs: "EPSG:4326" }), {
+    url: "https://example.com/a.zarr",
+    variable: "t",
+  });
+  assert.equal(
+    zarrLayerRequest("https://example.com/a.zarr", "t", { crs: "EPSG:32632" }).crs,
+    "EPSG:32632",
+  );
+});
+
+test("a Zarr layer records the item's extent, so Zoom to layer has somewhere to go", () => {
+  const item = (bbox?: number[]): StacItem =>
+    ({
+      type: "Feature",
+      id: "item",
+      geometry: null,
+      ...(bbox ? { bbox } : {}),
+      properties: {},
+      assets: {},
+    }) as StacItem;
+
+  assert.deepEqual(withItemBounds({ tileType: "raster" }, item([-114, 37, -109, 42])), {
+    tileType: "raster",
+    bounds: [-114, 37, -109, 42],
+  });
+  // A 3D bbox is flattened to its horizontal part, as the rest of the panel does.
+  assert.deepEqual(
+    withItemBounds({}, item([-114, 37, 100, -109, 42, 900])).bounds,
+    [-114, 37, -109, 42],
+  );
+  // Nothing to record leaves the metadata exactly as it was, rather than an undefined field.
+  assert.deepEqual(withItemBounds({ tileType: "raster" }, item()), { tileType: "raster" });
+});
+
+test("a Zarr store is only added once its own metadata answers", async () => {
+  const asked: string[] = [];
+  const serving = (present: string) =>
+    (async (url: string) => {
+      asked.push(String(url));
+      return new Response(String(url).endsWith(present) ? "{}" : "", {
+        status: String(url).endsWith(present) ? 200 : 404,
+      });
+    }) as unknown as typeof fetch;
+
+  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", serving("zarr.json")), true);
+  // v3 first, so a v2 store costs one extra request rather than being missed.
+  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", serving(".zgroup")), true);
+  // A trailing slash must not double up into `a.zarr//zarr.json`.
+  await zarrStoreIsReadable("https://example.com/a.zarr/", serving("zarr.json"));
+  assert.ok(asked.every((url) => !url.includes(".zarr//")));
+
+  // An Icechunk repository, or a half-written export: none of the root documents exist.
+  const missing = (async () => new Response("", { status: 404 })) as typeof fetch;
+  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", missing), false);
+
+  // A CORS-blocked host rejects rather than answering, and must not be retried key by key.
+  const blocked: string[] = [];
+  const rejecting = (async (url: string) => {
+    blocked.push(String(url));
+    throw new TypeError("Failed to fetch");
+  }) as unknown as typeof fetch;
+  assert.equal(await zarrStoreIsReadable("https://example.com/a.zarr", rejecting), false);
+  assert.equal(blocked.length, 1);
 });
 
 test("Add waits on a choice only for the formats that hold several layers", () => {

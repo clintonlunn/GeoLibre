@@ -26,7 +26,11 @@ import {
   type StacNextPage,
   type StacSearchResult,
   type StacSearchCursor,
+  withItemBounds,
+  zarrCrs,
   zarrLayerRequest,
+  zarrStoreIsReadable,
+  zarrStorePath,
 } from "./stac-api";
 import { buildCatalogTree } from "./stac-catalog-tree";
 import { el, setDisabled } from "../panel-dom";
@@ -159,6 +163,7 @@ export interface StacLabels {
   formatUnknown: string;
   addNoTarget: string;
   addIcechunk: string;
+  addZarrUnreadable: string;
   chooseTarget: string;
   notAddable: string;
   showing: (count: number) => string;
@@ -243,6 +248,7 @@ let labels: StacLabels = {
   formatUnknown: "Unknown format",
   addNoTarget: "This asset lists nothing to draw",
   addIcechunk: "Icechunk stores cannot be read yet",
+  addZarrUnreadable: "This Zarr store could not be opened",
   chooseTarget: "Choose what to add",
   notAddable: "not addable",
   showing: (count) => `Showing ${count} items.`,
@@ -639,19 +645,27 @@ async function visualizeAsset(
       if (isIcechunkAsset(asset)) throw new Error(labels.addIcechunk);
       const variable = target ?? assetTargets(item, key, asset)[0]?.id;
       if (!variable) throw new Error(labels.addNoTarget);
-      const request = zarrLayerRequest(await readableHref(item, asset.href), variable, cogOptions);
+      const href = await readableHref(item, asset.href);
+      if (!(await zarrStoreIsReadable(zarrStorePath(href).url, fetch, signal))) {
+        throw new Error(labels.addZarrUnreadable);
+      }
+      const request = zarrLayerRequest(href, variable, {
+        ...cogOptions,
+        ...(zarrCrs(item, asset) ? { crs: zarrCrs(item, asset) } : {}),
+      });
       const layerId = await addZarrRasterLayer(appRef, {
         ...request,
         name: `${name} — ${variable}`,
       });
       // The renderer places the data from the store's own coordinates and records no extent, so
       // Zoom to layer has nothing to fly to. The item's bbox is WGS84, which is what it wants.
-      const bounds = itemBbox(item);
-      if (layerId && bounds) {
-        const layer = useAppStore.getState().layers.find((entry) => entry.id === layerId);
-        if (layer) {
-          useAppStore.getState().updateLayer(layerId, { metadata: { ...layer.metadata, bounds } });
-        }
+      const layer = layerId
+        ? useAppStore.getState().layers.find((entry) => entry.id === layerId)
+        : undefined;
+      if (layerId && layer) {
+        useAppStore
+          .getState()
+          .updateLayer(layerId, { metadata: withItemBounds(layer.metadata, item) });
       }
       return;
     }

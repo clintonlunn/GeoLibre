@@ -38,6 +38,9 @@ export interface StacAsset {
   "xarray:open_kwargs"?: { storage_options?: { account_name?: string } };
   /** Present on an Icechunk store, which is a manifest rather than a Zarr hierarchy. */
   "icechunk:branch"?: string;
+  /** Projection extension code, e.g. `EPSG:32632`, when the asset is not in WGS84. */
+  "proj:code"?: string;
+  "proj:epsg"?: number;
 }
 
 export interface StacItem extends Feature<Geometry | null> {
@@ -710,6 +713,34 @@ export interface ZarrLayerRequest {
   variable: string;
   colormap?: string;
   clim?: [number, number];
+  crs?: string;
+}
+
+/** An `EPSG:<code>` string from any of the spellings catalogs use, or undefined for none. */
+function epsgCode(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) return `EPSG:${value}`;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (/^epsg:\d+$/i.test(trimmed)) return trimmed.toUpperCase();
+  return /^\d+$/.test(trimmed) ? `EPSG:${trimmed}` : undefined;
+}
+
+/**
+ * The CRS a Zarr store's coordinates are in. The renderer assumes WGS84, so a store on a projected
+ * grid lands in the wrong place unless it is told — EOPF publishes Sentinel scenes on UTM zones.
+ * The asset's own projection wins over the item's, and the datacube dimensions are the fallback.
+ */
+export function zarrCrs(item: StacItem, asset: StacAsset): string | undefined {
+  const spatial = entriesOf(item.properties?.["cube:dimensions"]).filter(
+    ([, dimension]) => dimension.type === "spatial",
+  );
+  return (
+    epsgCode(asset["proj:code"]) ??
+    epsgCode(asset["proj:epsg"]) ??
+    epsgCode(item.properties?.["proj:code"]) ??
+    epsgCode(item.properties?.["proj:epsg"]) ??
+    spatial.map(([, dimension]) => epsgCode(dimension.reference_system)).find(Boolean)
+  );
 }
 
 /**
@@ -720,18 +751,60 @@ export interface ZarrLayerRequest {
 export function zarrLayerRequest(
   href: string,
   variable: string,
-  options: { colormap?: string; rescaleMin?: number; rescaleMax?: number } = {},
+  options: { colormap?: string; rescaleMin?: number; rescaleMax?: number; crs?: string } = {},
 ): ZarrLayerRequest {
-  const { colormap, rescaleMin, rescaleMax } = options;
+  const { colormap, rescaleMin, rescaleMax, crs } = options;
   return {
     url: zarrStorePath(href).url,
     variable,
+    // WGS84 is what the renderer already assumes, so saying it adds nothing.
+    ...(crs && crs !== "EPSG:4326" ? { crs } : {}),
     ...(colormap ? { colormap } : {}),
     // Half a range would leave the renderer to invent the other end, so both bounds or neither.
     ...(rescaleMin !== undefined && rescaleMax !== undefined
       ? { clim: [rescaleMin, rescaleMax] as [number, number] }
       : {}),
   };
+}
+
+/**
+ * A layer's metadata with the item's extent recorded on it. The Zarr renderer places data from the
+ * store's own coordinates and reports no extent, so without this Zoom to layer has nothing to fly
+ * to; a STAC bbox is WGS84, which is what the map wants.
+ */
+export function withItemBounds(
+  metadata: Record<string, unknown>,
+  item: StacItem,
+): Record<string, unknown> {
+  const bounds = itemBbox(item);
+  return bounds ? { ...metadata, bounds } : metadata;
+}
+
+/** The documents a Zarr store keeps at its root, v3 first. */
+const ZARR_ROOT_KEYS = ["zarr.json", ".zmetadata", ".zgroup"];
+
+/**
+ * Whether a Zarr store can actually be opened, by asking for the metadata every store must have.
+ * The renderer reports a store it cannot read through an event rather than by failing the call,
+ * so without this the panel says an asset was added while nothing is drawn — which is what an
+ * Icechunk repository, a CORS-blocked host, or a half-written export all look like.
+ */
+export async function zarrStoreIsReadable(
+  url: string,
+  fetcher: FetchLike = fetch,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  for (const key of ZARR_ROOT_KEYS) {
+    try {
+      const response = await fetcher(`${url.replace(/\/$/, "")}/${key}`, { signal });
+      if (response.ok) return true;
+    } catch (error) {
+      // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      return false;
+    }
+  }
+  return false;
 }
 
 /** What the panel would add from an asset, for the formats that hold more than one thing. */
