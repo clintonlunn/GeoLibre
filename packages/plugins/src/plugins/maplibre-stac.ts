@@ -616,6 +616,14 @@ function assetFormatLabel(asset: StacAsset): string {
   }
 }
 
+/** The Add button's tooltip: what it would add, or why it will not. */
+function addReason(item: StacItem, key: string, asset: StacAsset): string {
+  if (canAddAsset(item, key, asset)) return asset.href;
+  if (!isVisualizableAsset(asset)) return labels.addUnsupported;
+  if (isIcechunkAsset(asset)) return labels.addIcechunk;
+  return labels.addNoTarget;
+}
+
 function assetOptionLabel(item: StacItem, key: string, asset: StacAsset): string {
   const addability = canAddAsset(item, key, asset) ? "" : ` (${labels.notAddable})`;
   return `${assetLabel(key, asset)} — ${assetFormatLabel(asset)}${addability}`;
@@ -1162,13 +1170,7 @@ function buildPanel(container: HTMLElement): () => void {
           assetSelect.title = asset.href;
           download.title = asset.href;
           setDisabled(add, adding || !addable);
-          add.title = addable
-            ? asset.href
-            : !isVisualizableAsset(asset)
-              ? labels.addUnsupported
-              : isIcechunkAsset(asset)
-                ? labels.addIcechunk
-                : labels.addNoTarget;
+          add.title = addReason(item, key, asset);
         };
 
         assetSelect.addEventListener("change", syncAsset);
