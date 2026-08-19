@@ -1813,6 +1813,13 @@ test("a Zarr variable check says which problem it found, not merely that there w
   for (const status of [401, 403, 409]) {
     assert.equal(await zarrTargetCheck(store, "sst", serving({}, status)), "unauthorized");
   }
+  // A bucket without `ListBucket` refuses a key that is merely absent, so the refusal must not end
+  // the search: `.zarray` still answers, and the store is readable after all.
+  const refusesMissing = (async (url: string) =>
+    String(url).endsWith("sst/.zarray")
+      ? new Response(JSON.stringify({}), { status: 200 })
+      : new Response("", { status: 403 })) as unknown as typeof fetch;
+  assert.equal(await zarrTargetCheck(store, "sst", refusesMissing), "array");
   assert.equal(await zarrTargetCheck(store, "sst", serving({}, 404)), "unavailable");
 
   // A key cannot be appended after a query, so such a store is named as its own problem rather

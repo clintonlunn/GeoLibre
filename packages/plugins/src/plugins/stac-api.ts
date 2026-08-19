@@ -57,7 +57,12 @@ export interface StacItem extends Feature<Geometry | null> {
   id: string;
   bbox?: BBox;
   collection?: string;
-  properties: Record<string, unknown> & { datetime?: string; start_datetime?: string };
+  properties: Record<string, unknown> & {
+    datetime?: string;
+    start_datetime?: string;
+    "table:storage_options"?: StorageOptions;
+    "xarray:open_kwargs"?: XarrayOpenKwargs;
+  };
   assets: Record<string, StacAsset>;
   links?: StacLink[];
 }
@@ -280,11 +285,9 @@ function isStacItem(value: unknown): value is StacItem {
 
 function normalizeItem(item: StacItem, base: string): StacItem {
   // The table extension allows the storage options to sit on the item instead of on each asset.
-  const itemProperties = item.properties as Record<string, StorageOptions | undefined> | undefined;
   const itemAccount =
-    itemProperties?.["table:storage_options"]?.account_name ??
-    (itemProperties?.["xarray:open_kwargs"] as XarrayOpenKwargs | undefined)?.storage_options
-      ?.account_name;
+    item.properties?.["table:storage_options"]?.account_name ??
+    item.properties?.["xarray:open_kwargs"]?.storage_options?.account_name;
   const assets = Object.fromEntries(
     Object.entries(item.assets ?? {}).flatMap(([key, asset]) => {
       if (!asset?.href) return [];
@@ -958,10 +961,16 @@ export async function zarrTargetCheck(
 ): Promise<ZarrTargetCheck> {
   // Asked here rather than by the caller, so one function owns the whole verdict.
   if (!zarrStoreTakesKeys(store)) return "unsupported-url";
+  // Some gateways answer a refusal for a key that is merely absent (S3 without `ListBucket`), so a
+  // refusal is remembered and only reported once every key has been asked.
+  let refused = false;
   for (const key of ZARR_NODE_KEYS) {
     try {
       const response = await fetcher(storeKeyUrl(store, `${variable}/${key}`), { signal });
-      if (UNAUTHORIZED_STATUSES.has(response.status)) return "unauthorized";
+      if (UNAUTHORIZED_STATUSES.has(response.status)) {
+        refused = true;
+        continue;
+      }
       if (!response.ok) continue;
       // v2 splits the answer across two files; v3 says which it is, and says so explicitly.
       if (key === ".zarray") return "array";
@@ -979,7 +988,7 @@ export async function zarrTargetCheck(
       return "unavailable";
     }
   }
-  return "unavailable";
+  return refused ? "unauthorized" : "unavailable";
 }
 
 /** `<store>/<key>`, with any query kept where it belongs rather than buried in the path. */
