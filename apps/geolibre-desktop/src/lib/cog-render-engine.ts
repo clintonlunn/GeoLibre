@@ -26,3 +26,14 @@ export function cogEngineDefaults(engine: GeoLibreCogLayerOptions["engine"]): {
   if (engine === "auto") return {};
   return { engine: engine ?? LEGACY_COG_ENGINE };
 }
+
+/**
+ * Leave the raster control on its native, globe-compatible default for URL
+ * deep links. A deep link starts an empty workspace, so the first COG mounts a
+ * fresh control whose default is `cog-tiler-wasm`; later entries in the same
+ * link keep that engine. Omitting the key also avoids re-rendering every layer
+ * if this loader is reused with an existing control.
+ */
+export function deepLinkCogDefaults(): { engine?: GeoLibreCogRenderEngine } {
+  return cogEngineDefaults("auto");
+}
