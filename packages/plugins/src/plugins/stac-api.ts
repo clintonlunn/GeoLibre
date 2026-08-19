@@ -804,11 +804,34 @@ export function zarrTargets(item: StacItem, assetKey: string): AssetTarget[] {
  * either the whole store or one array within it (EOPF names a Sentinel band that way).
  */
 export function zarrStorePath(href: string): { url: string; path?: string } {
-  const marker = /\.zarr\//i.exec(href);
+  let parsed: URL;
+  try {
+    parsed = new URL(href);
+  } catch {
+    // Not a URL to take apart — hand it back and let the reader fail on its own terms.
+    return { url: href };
+  }
+  const marker = /\.zarr\//i.exec(parsed.pathname);
   if (!marker) return { url: href };
   const cut = marker.index + ".zarr".length;
-  const path = href.slice(cut + 1);
-  return path ? { url: href.slice(0, cut), path } : { url: href.slice(0, cut) };
+  // Only the path names the array: a query string belongs to the request, not to the key.
+  const path = parsed.pathname.slice(cut + 1);
+  const root = new URL(parsed.href);
+  root.pathname = parsed.pathname.slice(0, cut);
+  return path ? { url: root.href, path } : { url: root.href };
+}
+
+/**
+ * Whether a store URL can have keys appended to it. A reader asks for `<store>/<key>`, so anything
+ * after the path — a SAS token, a presigned signature — would land in the middle of the request.
+ */
+export function zarrStoreTakesKeys(url: string): boolean {
+  try {
+    const { search, hash } = new URL(url);
+    return !search && !hash;
+  } catch {
+    return true;
+  }
 }
 
 /** What the Zarr renderer is asked for: the store, the array inside it, and how to colour it. */
@@ -900,7 +923,7 @@ export async function zarrStoreIsReadable(
 ): Promise<boolean> {
   for (const key of ZARR_ROOT_KEYS) {
     try {
-      const response = await fetcher(`${url.replace(/\/$/, "")}/${key}`, { signal });
+      const response = await fetcher(storeKeyUrl(url, key), { signal });
       if (response.ok) return true;
     } catch (error) {
       // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
@@ -909,6 +932,17 @@ export async function zarrStoreIsReadable(
     }
   }
   return false;
+}
+
+/** `<store>/<key>`, with any query kept where it belongs rather than buried in the path. */
+function storeKeyUrl(store: string, key: string): string {
+  try {
+    const url = new URL(store);
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/${key}`;
+    return url.href;
+  } catch {
+    return `${store.replace(/\/$/, "")}/${key}`;
+  }
 }
 
 /** What the panel would add from an asset, for the formats that hold more than one thing. */

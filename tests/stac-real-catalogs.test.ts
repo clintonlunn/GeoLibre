@@ -76,7 +76,8 @@ test("EOPF's Sentinel-2 assets address an array inside the store", async () => {
   // No datacube extension on these items: the href itself names the array.
   assert.deepEqual(item.properties["cube:variables"], undefined);
   const [target] = assetTargets(item, "B02_10m", asset);
-  assert.equal(target?.id, "measurements/reflectance/r10m/b02");
+  assert.ok(target, "the asset names the array it holds");
+  assert.equal(target.id, "measurements/reflectance/r10m/b02");
 
   // The reader is handed the store, with that path as the variable.
   const request = zarrLayerRequest(asset.href, target.id);

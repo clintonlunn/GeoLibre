@@ -35,6 +35,7 @@ import {
   zarrCrs,
   zarrLayerRequest,
   zarrStoreIsReadable,
+  zarrStoreTakesKeys,
   zarrStorePath,
 } from "./stac-api";
 import { buildCatalogTree } from "./stac-catalog-tree";
@@ -615,9 +616,8 @@ function assetFormatLabel(asset: StacAsset): string {
   }
 }
 
-function assetOptionLabel(key: string, asset: StacAsset): string {
-  const addable = isVisualizableAsset(asset) && !isIcechunkAsset(asset);
-  const addability = addable ? "" : ` (${labels.notAddable})`;
+function assetOptionLabel(item: StacItem, key: string, asset: StacAsset): string {
+  const addability = canAddAsset(item, key, asset) ? "" : ` (${labels.notAddable})`;
   return `${assetLabel(key, asset)} — ${assetFormatLabel(asset)}${addability}`;
 }
 
@@ -704,13 +704,13 @@ async function visualizeAsset(
       const variable = target ?? assetTargets(item, key, asset)[0]?.id;
       if (!variable) throw new Error(labels.addNoTarget);
       const href = await readableHref(item, asset.href);
-      if (!(await zarrStoreIsReadable(zarrStorePath(href).url, fetch, signal))) {
+      const { url } = zarrStorePath(href);
+      // A signed store is read key by key, and the token cannot survive being followed by one.
+      if (!zarrStoreTakesKeys(url) || !(await zarrStoreIsReadable(url, fetch, signal))) {
         throw new Error(labels.addZarrUnreadable);
       }
-      const request = zarrLayerRequest(href, variable, {
-        ...cogOptions,
-        ...(zarrCrs(item, asset) ? { crs: zarrCrs(item, asset) } : {}),
-      });
+      const crs = zarrCrs(item, asset);
+      const request = zarrLayerRequest(href, variable, { ...cogOptions, ...(crs ? { crs } : {}) });
       const layerId = await addZarrRasterLayer(appRef, {
         ...request,
         name: `${name} — ${variable}`,
@@ -1120,12 +1120,12 @@ function buildPanel(container: HTMLElement): () => void {
         const assetSelect = el("select");
         assetSelect.style.cssText = `${style.input}flex:1 1 140px;width:auto;`;
         for (const [key, asset] of assets) {
-          const option = el("option", assetOptionLabel(key, asset));
+          const option = el("option", assetOptionLabel(item, key, asset));
           option.value = key;
           assetSelect.append(option);
         }
         // Preselect something the user can actually add; assets often lead with metadata.
-        const firstAddable = assets.find(([, asset]) => isVisualizableAsset(asset));
+        const firstAddable = assets.find(([key, asset]) => canAddAsset(item, key, asset));
         if (firstAddable) assetSelect.value = firstAddable[0];
         const selected = (): [string, StacAsset] =>
           assets.find(([key]) => key === assetSelect.value) ?? assets[0];

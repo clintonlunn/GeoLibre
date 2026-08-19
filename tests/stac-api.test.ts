@@ -20,6 +20,7 @@ import {
   zarrCrs,
   zarrLayerRequest,
   zarrStoreIsReadable,
+  zarrStoreTakesKeys,
   zarrStorePath,
   zarrTargets,
 } from "../packages/plugins/src/plugins/stac-api";
@@ -1678,6 +1679,16 @@ test("a Zarr layer request carries the store, the array, and the panel's raster 
     zarrLayerRequest(inside, "measurements/reflectance/r10m/b02").url,
     "https://objects.eodc.eu/bucket/S2C.zarr",
   );
+
+  // A signed href carries a query, which names no part of the array and no part of the key.
+  const signed = "https://acct.blob.core.windows.net/c/S2.zarr/measurements/b02?st=2026&sig=abc";
+  assert.deepEqual(zarrStorePath(signed), {
+    url: "https://acct.blob.core.windows.net/c/S2.zarr?st=2026&sig=abc",
+    path: "measurements/b02",
+  });
+  // The reader appends `/<key>` to whatever it is given, so such a store cannot be read at all.
+  assert.equal(zarrStoreTakesKeys("https://example.com/a.zarr"), true);
+  assert.equal(zarrStoreTakesKeys("https://example.com/a.zarr?sig=abc"), false);
 });
 
 test("a projected Zarr store carries its CRS, and WGS84 stays implicit", () => {
@@ -1758,6 +1769,14 @@ test("a Zarr store is only added once its own metadata answers", async () => {
   // A trailing slash must not double up into `a.zarr//zarr.json`.
   await zarrStoreIsReadable("https://example.com/a.zarr/", serving("zarr.json"));
   assert.ok(asked.every((url) => !url.includes(".zarr//")));
+
+  // A query stays a query: `a.zarr?sig=x/zarr.json` would be a path the host has never heard of.
+  const queried: string[] = [];
+  await zarrStoreIsReadable("https://example.com/a.zarr?sig=x", (async (url: string) => {
+    queried.push(String(url));
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch);
+  assert.deepEqual(queried, ["https://example.com/a.zarr/zarr.json?sig=x"]);
 
   // An Icechunk repository, or a half-written export: none of the root documents exist.
   const missing = (async () => new Response("", { status: 404 })) as typeof fetch;
