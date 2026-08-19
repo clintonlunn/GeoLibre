@@ -3443,6 +3443,7 @@
     "addIcechunk": "Icechunk stores cannot be read yet",
     "zarrProblemGroup": "This asset names a group of arrays, not one that can be drawn",
     "zarrProblemUnauthorized": "This Zarr store needs credentials GeoLibre cannot supply yet",
+    "zarrProblemUnsupportedUrl": "This Zarr store's address cannot be read one key at a time",
     "zarrProblemUnavailable": "This Zarr store could not be opened",
     "chooseTarget": "Choose what to add",
     "cogUnsupported": "This GeoLibre host cannot visualize remote GeoTIFF assets",

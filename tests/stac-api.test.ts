@@ -1791,10 +1791,18 @@ test("a Zarr variable check says which problem it found, not merely that there w
   }
   assert.equal(await zarrTargetCheck(store, "sst", serving({}, 404)), "unavailable");
 
-  // A query stays a query: `a.zarr?sig=x/sst/zarr.json` would be a path no host has heard of.
+  // A key cannot be appended after a query, so such a store is named as its own problem rather
+  // than guessed at — `?v=2` is no more a credentials failure than `?sig=x` is a missing array.
   asked.length = 0;
-  await zarrTargetCheck("https://example.com/a.zarr?sig=x", "sst", serving({}));
-  assert.ok(asked.every((url) => url.includes("?sig=x") && !url.includes("?sig=x/")));
+  assert.equal(
+    await zarrTargetCheck("https://example.com/a.zarr?sig=x", "sst", serving({})),
+    "unsupported-url",
+  );
+  assert.equal(
+    await zarrTargetCheck("https://example.com/a.zarr?v=2", "sst", serving({})),
+    "unsupported-url",
+  );
+  assert.deepEqual(asked, [], "a store that cannot take keys is never asked for one");
 
   // A blocked host rejects rather than answering, and must not be retried key by key.
   const blocked: string[] = [];

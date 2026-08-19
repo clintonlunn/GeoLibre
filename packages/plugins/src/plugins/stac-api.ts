@@ -918,7 +918,12 @@ const ZARR_NODE_KEYS = ["zarr.json", ".zarray", ".zgroup"];
  * path that simply cannot be drawn, a refusal means credentials this build cannot supply, and the
  * rest is a store nothing can read.
  */
-export type ZarrTargetCheck = "array" | "group" | "unauthorized" | "unavailable";
+export type ZarrTargetCheck =
+  | "array"
+  | "group"
+  | "unauthorized"
+  | "unsupported-url"
+  | "unavailable";
 
 /** Statuses an object store answers with when a token is missing rather than the object. */
 const UNAUTHORIZED_STATUSES = new Set([401, 403, 409]);
@@ -934,6 +939,8 @@ export async function zarrTargetCheck(
   fetcher: FetchLike = fetch,
   signal?: AbortSignal,
 ): Promise<ZarrTargetCheck> {
+  // Asked here rather than by the caller, so one function owns the whole verdict.
+  if (!zarrStoreTakesKeys(store)) return "unsupported-url";
   for (const key of ZARR_NODE_KEYS) {
     try {
       const response = await fetcher(storeKeyUrl(store, `${variable}/${key}`), { signal });

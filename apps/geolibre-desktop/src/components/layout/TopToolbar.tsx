@@ -193,6 +193,14 @@ interface TopToolbarProps {
   viewer?: boolean;
 }
 
+/** Translation keys for the reasons a Zarr variable cannot be added. */
+const ZARR_PROBLEM_KEYS = {
+  group: "stacPlugin.zarrProblemGroup",
+  unauthorized: "stacPlugin.zarrProblemUnauthorized",
+  "unsupported-url": "stacPlugin.zarrProblemUnsupportedUrl",
+  unavailable: "stacPlugin.zarrProblemUnavailable",
+} as const;
+
 export function TopToolbar({
   compact = false,
   diagnosticsErrorCount,
@@ -951,14 +959,7 @@ export function TopToolbar({
       formatUnknown: t("stacPlugin.formatUnknown"),
       addNoTarget: t("stacPlugin.addNoTarget"),
       addIcechunk: t("stacPlugin.addIcechunk"),
-      zarrProblem: (problem) =>
-        problem === "group"
-          ? t("stacPlugin.zarrProblemGroup")
-          : problem === "unauthorized"
-            ? t("stacPlugin.zarrProblemUnauthorized")
-            : t("stacPlugin.zarrProblemUnavailable"),
-      chooseTarget: t("stacPlugin.chooseTarget"),
-      notAddable: t("stacPlugin.notAddable"),
+      zarrProblem: (problem) => t(ZARR_PROBLEM_KEYS[problem]),
     });
   }, [t]);
 
