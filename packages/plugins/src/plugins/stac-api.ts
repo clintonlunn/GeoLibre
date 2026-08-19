@@ -719,7 +719,7 @@ const ASSET_FORMATS: readonly AssetFormatRule[] = [
   { format: "geojson", mediaType: "geo+json", extension: /\.geojson($|\?)/i },
   { format: "cog", mediaType: "geotiff", extension: /\.tiff?($|\?)/i },
   { format: "parquet", mediaType: "parquet", extension: /\.parquet($|\?)/i },
-  { format: "zarr", mediaType: "zarr", extension: /\.zarr\/?($|\?)/i },
+  { format: "zarr", mediaType: "zarr", extension: /\.zarr(\/|$|\?)/i },
 ];
 
 export function assetDisplayFormat(asset: StacAsset): StacAssetDisplayFormat | null {

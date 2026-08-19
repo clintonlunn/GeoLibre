@@ -1176,7 +1176,8 @@ function buildPanel(container: HTMLElement): () => void {
         assetSelect.addEventListener("change", syncAsset);
         add.addEventListener("click", async () => {
           const [key, asset] = selected();
-          const target = targetSelect.value || assetTargets(item, key, asset)[0]?.id;
+          // `visualizeAsset` falls back to the first target itself, so do not decide twice.
+          const target = targetSelect.value || undefined;
           adding = true;
           syncAsset();
           setStatus(labels.adding(assetLabel(key, asset)));

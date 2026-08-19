@@ -1555,6 +1555,11 @@ test("Zarr assets are recognized by media type and by store extension", () => {
   );
   // A store is a directory, and catalogs write it with or without the trailing slash.
   assert.equal(assetFormat({ href: "https://example.com/era5.zarr/" }), "zarr");
+  // An href reaching into the store is still Zarr, even from a catalog that declares no type.
+  assert.equal(
+    assetFormat({ href: "https://example.com/scene.zarr/measurements/reflectance/r10m" }),
+    "zarr",
+  );
   assert.equal(assetFormat({ href: "https://example.com/era5.zarr?v=2" }), "zarr");
   // Named but out of reach: nothing behind Add speaks abfs, so it is labelled and not offered.
   assert.equal(assetDisplayFormat({ href: "abfs://era5/ERA5/a.zarr" }), "zarr");
