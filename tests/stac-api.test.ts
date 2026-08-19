@@ -1796,6 +1796,15 @@ test("a Zarr variable check says which problem it found, not merely that there w
   );
   // Metadata that names nothing is not an invitation to try.
   assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/zarr.json": {} })), "group");
+  // A 200 that is not the metadata says nothing: the v2 keys still get their turn.
+  const htmlThenZarray = (async (url: string) =>
+    String(url).endsWith("zarr.json")
+      ? new Response("<html>proxy</html>", { status: 200 })
+      : new Response(JSON.stringify({}), {
+          status: String(url).endsWith("sst/.zarray") ? 200 : 404,
+        })) as unknown as typeof fetch;
+  assert.equal(await zarrTargetCheck(store, "sst", htmlThenZarray), "array");
+
   // v2 has no node type: `.zarray` names an array, `.zgroup` names a group.
   assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/.zarray": {} })), "array");
   assert.equal(await zarrTargetCheck(store, "bands", serving({ "bands/.zgroup": {} })), "group");
@@ -1855,6 +1864,43 @@ test("Add waits on a choice only for the formats that hold several layers", () =
   // A store whose variables are all one-dimensional has nothing to draw, so Add stays dead.
   assert.equal(canAddAsset(item({ flat: { dimensions: ["time"] } }), "data", zarr), false);
   assert.equal(canAddAsset(drawable, "data", cog), true);
+});
+
+test("an item names the Zarr account in either spelling, as an asset does", async () => {
+  const fetcher = (async () =>
+    jsonResponse({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "item-level-account",
+          geometry: null,
+          collection: "era5-pds",
+          properties: {
+            datetime: "2020-12-01T00:00:00Z",
+            "xarray:open_kwargs": { storage_options: { account_name: "cpdataeuwest" } },
+          },
+          assets: { data: { href: "abfs://era5/a.zarr", type: "application/vnd+zarr" } },
+        },
+      ],
+      links: [],
+    })) as typeof fetch;
+  const result = await searchStacApi(
+    {
+      url: "https://planetarycomputer.microsoft.com/api/stac/v1/",
+      title: "Planetary Computer",
+      isApi: true,
+      searchUrl: "https://planetarycomputer.microsoft.com/api/stac/v1/search",
+      collections: [],
+      root: {},
+    },
+    { limit: 10 },
+    fetcher,
+  );
+  assert.equal(
+    result.items[0].assets.data.href,
+    "https://cpdataeuwest.blob.core.windows.net/era5/a.zarr",
+  );
 });
 
 test("an asset's own storage options outrank the ones beside them", async () => {

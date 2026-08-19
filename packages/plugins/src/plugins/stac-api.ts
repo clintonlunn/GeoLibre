@@ -44,6 +44,15 @@ export interface StacAsset {
   "proj:epsg"?: number;
 }
 
+/** The Azure account a catalog names beside an href, in either of the two spellings in use. */
+interface StorageOptions {
+  account_name?: string;
+}
+
+interface XarrayOpenKwargs {
+  storage_options?: StorageOptions;
+}
+
 export interface StacItem extends Feature<Geometry | null> {
   id: string;
   bbox?: BBox;
@@ -271,9 +280,11 @@ function isStacItem(value: unknown): value is StacItem {
 
 function normalizeItem(item: StacItem, base: string): StacItem {
   // The table extension allows the storage options to sit on the item instead of on each asset.
-  const itemAccount = (
-    item.properties?.["table:storage_options"] as { account_name?: string } | undefined
-  )?.account_name;
+  const itemProperties = item.properties as Record<string, StorageOptions | undefined> | undefined;
+  const itemAccount =
+    itemProperties?.["table:storage_options"]?.account_name ??
+    (itemProperties?.["xarray:open_kwargs"] as XarrayOpenKwargs | undefined)?.storage_options
+      ?.account_name;
   const assets = Object.fromEntries(
     Object.entries(item.assets ?? {}).flatMap(([key, asset]) => {
       if (!asset?.href) return [];
@@ -955,8 +966,13 @@ export async function zarrTargetCheck(
       // v2 splits the answer across two files; v3 says which it is, and says so explicitly.
       if (key === ".zarray") return "array";
       if (key === ".zgroup") return "group";
-      const metadata = (await response.json()) as { node_type?: string };
-      return metadata?.node_type === "array" ? "array" : "group";
+      // A proxy answering 200 with something that is not the metadata says nothing about the
+      // store, so fall through to the v2 keys rather than condemning it.
+      const metadata = await response
+        .json()
+        .then((body: unknown) => body as { node_type?: string })
+        .catch(() => null);
+      if (metadata) return metadata.node_type === "array" ? "array" : "group";
     } catch (error) {
       // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
       if (error instanceof DOMException && error.name === "AbortError") throw error;
