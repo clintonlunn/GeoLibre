@@ -1774,6 +1774,8 @@ test("a Zarr variable is only added once the store says it is an array", async (
     await zarrTargetIsArray(store, "r10m", serving({ "r10m/zarr.json": { node_type: "group" } })),
     false,
   );
+  // Metadata that names nothing is not an invitation to try: only an array says it is one.
+  assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/zarr.json": {} })), false);
   // v2 has no node type: `.zarray` exists for arrays only, and groups carry `.zgroup` instead.
   assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/.zarray": {} })), true);
   assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/.zgroup": {} })), false);

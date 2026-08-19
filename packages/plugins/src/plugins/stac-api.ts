@@ -312,13 +312,11 @@ function folderName(href: string): string {
 function catalogChildren(document: Record<string, unknown>, base: string): StacCatalogNode[] {
   return linksOf(document.links, base)
     .filter((link) => link.rel === "child")
-    .map(
-      (link): StacCatalogNode => ({
-        href: link.href,
-        title: link.title || folderName(link.href),
-        kind: /\/collection\.json($|[?#])/i.test(link.href) ? "collection" : "container",
-      }),
-    );
+    .map((link): StacCatalogNode => ({
+      href: link.href,
+      title: link.title || folderName(link.href),
+      kind: /\/collection\.json($|[?#])/i.test(link.href) ? "collection" : "container",
+    }));
 }
 
 /**
@@ -925,10 +923,10 @@ export async function zarrTargetIsArray(
     try {
       const response = await fetcher(storeKeyUrl(store, `${variable}/${key}`), { signal });
       if (!response.ok) continue;
-      // `.zarray` exists only for an array; v3 says which it is.
+      // `.zarray` exists only for an array; v3 says which it is, and says so explicitly.
       if (key === ".zarray") return true;
       const metadata = (await response.json()) as { node_type?: string };
-      return metadata?.node_type !== "group";
+      return metadata?.node_type === "array";
     } catch (error) {
       // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
       if (error instanceof DOMException && error.name === "AbortError") throw error;
