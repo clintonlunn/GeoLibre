@@ -961,6 +961,7 @@ export function TopToolbar({
       addIcechunk: t("stacPlugin.addIcechunk"),
       zarrProblem: (problem) => t(ZARR_PROBLEM_KEYS[problem]),
       chooseTarget: t("stacPlugin.chooseTarget"),
+      notAddable: t("stacPlugin.notAddable"),
     });
   }, [t]);
 

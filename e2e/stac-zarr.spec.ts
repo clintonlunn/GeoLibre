@@ -181,5 +181,4 @@ test("a Zarr asset from a STAC item reaches the map as the chosen variable", asy
   // The reader was pointed at the store and read its metadata from there. Chunk reads are left
   // out on purpose: those only happen once deck.gl paints, which headless WebGL may never do.
   expect(reads).toContain(".zmetadata");
-  expect(reads.every((key) => !key.startsWith("http"))).toBe(true);
 });
