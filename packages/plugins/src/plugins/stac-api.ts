@@ -907,8 +907,11 @@ export function withItemBounds(
   return bounds ? { ...metadata, bounds } : metadata;
 }
 
-/** What a readable array answers to: v3 metadata first, then the v2 spelling. */
-const ZARR_ARRAY_KEYS = ["zarr.json", ".zarray"];
+/**
+ * The documents a node answers to: v3 says what it is in one file, while v2 splits the answer —
+ * `.zarray` for an array, `.zgroup` for a group.
+ */
+const ZARR_NODE_KEYS = ["zarr.json", ".zarray", ".zgroup"];
 
 /**
  * What the store said about a variable. The three failures need different words: a group is a real
@@ -931,13 +934,14 @@ export async function zarrTargetCheck(
   fetcher: FetchLike = fetch,
   signal?: AbortSignal,
 ): Promise<ZarrTargetCheck> {
-  for (const key of ZARR_ARRAY_KEYS) {
+  for (const key of ZARR_NODE_KEYS) {
     try {
       const response = await fetcher(storeKeyUrl(store, `${variable}/${key}`), { signal });
       if (UNAUTHORIZED_STATUSES.has(response.status)) return "unauthorized";
       if (!response.ok) continue;
-      // `.zarray` exists only for an array; v3 says which it is, and says so explicitly.
+      // v2 splits the answer across two files; v3 says which it is, and says so explicitly.
       if (key === ".zarray") return "array";
+      if (key === ".zgroup") return "group";
       const metadata = (await response.json()) as { node_type?: string };
       return metadata?.node_type === "array" ? "array" : "group";
     } catch (error) {

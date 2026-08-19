@@ -1781,8 +1781,9 @@ test("a Zarr variable check says which problem it found, not merely that there w
   );
   // Metadata that names nothing is not an invitation to try.
   assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/zarr.json": {} })), "group");
-  // v2 has no node type: `.zarray` exists for arrays only.
+  // v2 has no node type: `.zarray` names an array, `.zgroup` names a group.
   assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/.zarray": {} })), "array");
+  assert.equal(await zarrTargetCheck(store, "bands", serving({ "bands/.zgroup": {} })), "group");
 
   // A private container answers 409 (Azure), 403 or 401 — a missing token, not a missing array.
   for (const status of [401, 403, 409]) {
