@@ -19,7 +19,7 @@ import {
   type StacItem,
   zarrCrs,
   zarrLayerRequest,
-  zarrTargetIsArray,
+  zarrTargetCheck,
   zarrStoreTakesKeys,
   zarrStorePath,
   zarrTargets,
@@ -1758,36 +1758,41 @@ test("a Zarr layer records the item's extent, so Zoom to layer has somewhere to 
   assert.deepEqual(withItemBounds({ tileType: "raster" }, item()), { tileType: "raster" });
 });
 
-test("a Zarr variable is only added once the store says it is an array", async () => {
+test("a Zarr variable check says which problem it found, not merely that there was one", async () => {
   const asked: string[] = [];
-  const serving = (bodies: Record<string, unknown>) =>
+  const serving = (bodies: Record<string, unknown>, status = 404) =>
     (async (url: string) => {
       asked.push(String(url));
       const match = Object.entries(bodies).find(([key]) => String(url).endsWith(key));
       return match
         ? new Response(JSON.stringify(match[1]), { status: 200 })
-        : new Response("", { status: 404 });
+        : new Response("", { status });
     }) as unknown as typeof fetch;
 
   const store = "https://example.com/a.zarr";
-  // v3 names what it is, so a group is refused and an array accepted.
   assert.equal(
-    await zarrTargetIsArray(store, "sst", serving({ "sst/zarr.json": { node_type: "array" } })),
-    true,
+    await zarrTargetCheck(store, "sst", serving({ "sst/zarr.json": { node_type: "array" } })),
+    "array",
   );
+  // EOPF keys an asset to a group of bands: a real path, and nothing to draw.
   assert.equal(
-    await zarrTargetIsArray(store, "r10m", serving({ "r10m/zarr.json": { node_type: "group" } })),
-    false,
+    await zarrTargetCheck(store, "r10m", serving({ "r10m/zarr.json": { node_type: "group" } })),
+    "group",
   );
-  // Metadata that names nothing is not an invitation to try: only an array says it is one.
-  assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/zarr.json": {} })), false);
-  // v2 has no node type: `.zarray` exists for arrays only, and groups carry `.zgroup` instead.
-  assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/.zarray": {} })), true);
-  assert.equal(await zarrTargetIsArray(store, "sst", serving({ "sst/.zgroup": {} })), false);
+  // Metadata that names nothing is not an invitation to try.
+  assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/zarr.json": {} })), "group");
+  // v2 has no node type: `.zarray` exists for arrays only.
+  assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/.zarray": {} })), "array");
+
+  // A private container answers 409 (Azure), 403 or 401 — a missing token, not a missing array.
+  for (const status of [401, 403, 409]) {
+    assert.equal(await zarrTargetCheck(store, "sst", serving({}, status)), "unauthorized");
+  }
+  assert.equal(await zarrTargetCheck(store, "sst", serving({}, 404)), "unavailable");
 
   // A query stays a query: `a.zarr?sig=x/sst/zarr.json` would be a path no host has heard of.
   asked.length = 0;
-  await zarrTargetIsArray("https://example.com/a.zarr?sig=x", "sst", serving({}));
+  await zarrTargetCheck("https://example.com/a.zarr?sig=x", "sst", serving({}));
   assert.ok(asked.every((url) => url.includes("?sig=x") && !url.includes("?sig=x/")));
 
   // A blocked host rejects rather than answering, and must not be retried key by key.
@@ -1796,7 +1801,7 @@ test("a Zarr variable is only added once the store says it is an array", async (
     blocked.push(String(url));
     throw new TypeError("Failed to fetch");
   }) as unknown as typeof fetch;
-  assert.equal(await zarrTargetIsArray(store, "sst", rejecting), false);
+  assert.equal(await zarrTargetCheck(store, "sst", rejecting), "unavailable");
   assert.equal(blocked.length, 1);
 });
 

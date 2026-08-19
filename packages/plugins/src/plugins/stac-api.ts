@@ -911,31 +911,42 @@ export function withItemBounds(
 const ZARR_ARRAY_KEYS = ["zarr.json", ".zarray"];
 
 /**
- * Whether a variable really is a drawable array in the store. Asking for the array's own metadata
- * settles three things in one request: the store is reachable, the path exists, and it is an array
- * rather than a group — EOPF keys an asset to `.../r10m`, which holds four bands and draws nothing.
+ * What the store said about a variable. The three failures need different words: a group is a real
+ * path that simply cannot be drawn, a refusal means credentials this build cannot supply, and the
+ * rest is a store nothing can read.
  */
-export async function zarrTargetIsArray(
+export type ZarrTargetCheck = "array" | "group" | "unauthorized" | "unavailable";
+
+/** Statuses an object store answers with when a token is missing rather than the object. */
+const UNAUTHORIZED_STATUSES = new Set([401, 403, 409]);
+
+/**
+ * Whether a variable really is a drawable array in the store. Asking for the array's own metadata
+ * settles it in one request: the store is reachable, the path exists, and it is an array rather
+ * than a group — EOPF keys an asset to `.../r10m`, which holds four bands and draws nothing.
+ */
+export async function zarrTargetCheck(
   store: string,
   variable: string,
   fetcher: FetchLike = fetch,
   signal?: AbortSignal,
-): Promise<boolean> {
+): Promise<ZarrTargetCheck> {
   for (const key of ZARR_ARRAY_KEYS) {
     try {
       const response = await fetcher(storeKeyUrl(store, `${variable}/${key}`), { signal });
+      if (UNAUTHORIZED_STATUSES.has(response.status)) return "unauthorized";
       if (!response.ok) continue;
       // `.zarray` exists only for an array; v3 says which it is, and says so explicitly.
-      if (key === ".zarray") return true;
+      if (key === ".zarray") return "array";
       const metadata = (await response.json()) as { node_type?: string };
-      return metadata?.node_type === "array";
+      return metadata?.node_type === "array" ? "array" : "group";
     } catch (error) {
       // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
       if (error instanceof DOMException && error.name === "AbortError") throw error;
-      return false;
+      return "unavailable";
     }
   }
-  return false;
+  return "unavailable";
 }
 
 /** `<store>/<key>`, with any query kept where it belongs rather than buried in the path. */

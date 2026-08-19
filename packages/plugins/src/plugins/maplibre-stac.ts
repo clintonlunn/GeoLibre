@@ -34,7 +34,7 @@ import {
   withItemBounds,
   zarrCrs,
   zarrLayerRequest,
-  zarrTargetIsArray,
+  zarrTargetCheck,
   zarrStoreTakesKeys,
   zarrStorePath,
 } from "./stac-api";
@@ -204,7 +204,7 @@ export interface StacLabels {
   formatUnknown: string;
   addNoTarget: string;
   addIcechunk: string;
-  addZarrUnreadable: string;
+  zarrProblem: (problem: "group" | "unauthorized" | "unavailable") => string;
   chooseTarget: string;
   notAddable: string;
   showing: (count: number) => string;
@@ -298,7 +298,12 @@ let labels: StacLabels = {
   formatUnknown: "Unknown format",
   addNoTarget: "This asset lists nothing to draw",
   addIcechunk: "Icechunk stores cannot be read yet",
-  addZarrUnreadable: "This Zarr store could not be opened",
+  zarrProblem: (problem) =>
+    problem === "group"
+      ? "This asset names a group of arrays, not one that can be drawn"
+      : problem === "unauthorized"
+        ? "This Zarr store needs credentials GeoLibre cannot supply yet"
+        : "This Zarr store could not be opened",
   chooseTarget: "Choose what to add",
   notAddable: "not addable",
   showing: (count) => `Showing ${count} items.`,
@@ -714,9 +719,11 @@ async function visualizeAsset(
       // Deliberately unsigned: a store is read key by key, and a token in the URL cannot survive
       // being followed by one. A private container therefore fails the check below and says so.
       const { url } = zarrStorePath(asset.href);
-      if (!zarrStoreTakesKeys(url) || !(await zarrTargetIsArray(url, variable, fetch, signal))) {
-        throw new Error(labels.addZarrUnreadable);
-      }
+      const checked = zarrStoreTakesKeys(url)
+        ? await zarrTargetCheck(url, variable, fetch, signal)
+        : "unauthorized";
+      if (checked !== "array") throw new Error(labels.zarrProblem(checked));
+
       const crs = zarrCrs(item, asset);
       const request = zarrLayerRequest(asset.href, variable, {
         ...cogOptions,
