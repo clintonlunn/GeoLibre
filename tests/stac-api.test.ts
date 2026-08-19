@@ -11,6 +11,14 @@ import {
   openCatalogNode,
   searchStacApi,
   searchStaticStac,
+  assetTargets,
+  canAddAsset,
+  isIcechunkAsset,
+  requiresTarget,
+  type StacItem,
+  zarrLayerRequest,
+  zarrStorePath,
+  zarrTargets,
 } from "../packages/plugins/src/plugins/stac-api";
 
 function jsonResponse(value: unknown, status = 200): Response {
@@ -1362,5 +1370,210 @@ test("asset and bbox helpers recognize common STAC data", () => {
       assets: {},
     }),
     [1, 2, 3, 4],
+  );
+});
+
+test("Zarr assets are recognized by media type and by store extension", () => {
+  assert.equal(
+    assetFormat({ href: "https://example.com/era5.zarr", type: "application/vnd+zarr" }),
+    "zarr",
+  );
+  // A store is a directory, and catalogs write it with or without the trailing slash.
+  assert.equal(assetFormat({ href: "https://example.com/era5.zarr/" }), "zarr");
+  assert.equal(assetFormat({ href: "https://example.com/era5.zarr?v=2" }), "zarr");
+  // Named but out of reach: nothing behind Add speaks abfs, so it is labelled and not offered.
+  assert.equal(assetDisplayFormat({ href: "abfs://era5/ERA5/a.zarr" }), "zarr");
+  assert.equal(assetFormat({ href: "abfs://era5/ERA5/a.zarr" }), null);
+});
+
+test("a Zarr asset's storage options resolve its Azure href", async () => {
+  // Zarr keeps the account under xarray:open_kwargs rather than table:storage_options (era5-pds).
+  const fetcher = (async () =>
+    jsonResponse({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "era5-pds-2020-12-fc",
+          geometry: null,
+          collection: "era5-pds",
+          properties: { datetime: "2020-12-01T00:00:00Z" },
+          assets: {
+            precipitation_amount_1hour_Accumulation: {
+              href: "abfs://era5/ERA5/2020/12/precipitation_amount_1hour_Accumulation.zarr",
+              type: "application/vnd+zarr",
+              "xarray:open_kwargs": { storage_options: { account_name: "cpdataeuwest" } },
+            },
+          },
+        },
+      ],
+      links: [],
+    })) as typeof fetch;
+  const result = await searchStacApi(
+    {
+      url: "https://planetarycomputer.microsoft.com/api/stac/v1/",
+      title: "Planetary Computer",
+      isApi: true,
+      searchUrl: "https://planetarycomputer.microsoft.com/api/stac/v1/search",
+      collections: [],
+      root: {},
+    },
+    { limit: 10 },
+    fetcher,
+  );
+  const asset = result.items[0].assets.precipitation_amount_1hour_Accumulation;
+  assert.equal(
+    asset.href,
+    "https://cpdataeuwest.blob.core.windows.net/era5/ERA5/2020/12/precipitation_amount_1hour_Accumulation.zarr",
+  );
+  assert.equal(assetFormat(asset), "zarr");
+});
+
+test("a Zarr store's drawable targets are its spatial variables", () => {
+  const item = (variables: Record<string, unknown>): StacItem => ({
+    type: "Feature",
+    id: "era5-pds-2020-12-fc",
+    geometry: null,
+    properties: {
+      "cube:dimensions": {
+        lat: { type: "spatial" },
+        lon: { type: "spatial" },
+        time: { type: "temporal" },
+      },
+      "cube:variables": variables,
+    },
+    assets: {},
+  });
+  const era5 = item({
+    time1_bounds: { dimensions: ["time", "nv"] },
+    precip: { dimensions: ["time", "lat", "lon"], unit: "m" },
+    tasmax: { dimensions: ["time", "lat", "lon"], unit: "K" },
+  });
+
+  // An asset keyed by a variable holds that one alone; bounds span no two spatial dimensions.
+  assert.deepEqual(zarrTargets(era5, "precip"), [{ id: "precip", label: "precip (m)" }]);
+  assert.deepEqual(zarrTargets(era5, "data"), [
+    { id: "precip", label: "precip (m)" },
+    { id: "tasmax", label: "tasmax (K)" },
+  ]);
+  assert.deepEqual(zarrTargets(item({ flat: { dimensions: ["time"] } }), "data"), []);
+  // A list where an object belongs would otherwise yield indices as variable names.
+  assert.deepEqual(
+    zarrTargets({ ...era5, properties: { "cube:variables": ["precip"] } }, "data"),
+    [],
+  );
+});
+
+test("a Zarr layer request carries the store, the array, and the panel's raster options", () => {
+  const inside = "https://objects.eodc.eu/bucket/S2C.zarr/measurements/reflectance/r10m/b02";
+
+  // An href reaching into the store is split: the reader opens the store, then the array within.
+  assert.deepEqual(zarrStorePath(inside), {
+    url: "https://objects.eodc.eu/bucket/S2C.zarr",
+    path: "measurements/reflectance/r10m/b02",
+  });
+  assert.deepEqual(zarrStorePath("https://example.com/demo.zarr"), {
+    url: "https://example.com/demo.zarr",
+  });
+
+  assert.deepEqual(
+    zarrLayerRequest("https://example.com/demo.zarr", "temperature", {
+      colormap: "viridis",
+      rescaleMin: -100,
+      rescaleMax: 100,
+    }),
+    {
+      url: "https://example.com/demo.zarr",
+      variable: "temperature",
+      colormap: "viridis",
+      clim: [-100, 100],
+    },
+  );
+
+  // Half a range is no range: the renderer would have to invent the other bound.
+  assert.deepEqual(zarrLayerRequest("https://example.com/demo.zarr", "t", { rescaleMin: 0 }), {
+    url: "https://example.com/demo.zarr",
+    variable: "t",
+  });
+  assert.deepEqual(zarrLayerRequest("https://example.com/demo.zarr", "t", { rescaleMax: 1 }), {
+    url: "https://example.com/demo.zarr",
+    variable: "t",
+  });
+  // A store addressed inside still opens at its root, with the array as the variable.
+  assert.equal(
+    zarrLayerRequest(inside, "measurements/reflectance/r10m/b02").url,
+    "https://objects.eodc.eu/bucket/S2C.zarr",
+  );
+});
+
+test("Add waits on a choice only for the formats that hold several layers", () => {
+  const zarr = { href: "https://example.com/a.zarr", type: "application/vnd.zarr" };
+  const cog = { href: "https://example.com/a.tif", type: "image/tiff" };
+  const item = (variables: Record<string, unknown>): StacItem => ({
+    type: "Feature",
+    id: "item",
+    geometry: null,
+    properties: {
+      "cube:dimensions": { x: { type: "spatial" }, y: { type: "spatial" } },
+      "cube:variables": variables,
+    },
+    assets: {},
+  });
+  const drawable = item({ AET: { dimensions: ["time", "y", "x"] } });
+
+  // An Icechunk repository is a manifest, not a Zarr hierarchy: the URL reader cannot open it.
+  assert.equal(canAddAsset(drawable, "data", { ...zarr, "icechunk:branch": "main" }), false);
+  assert.equal(isIcechunkAsset(zarr), false);
+
+  assert.equal(requiresTarget(zarr), true);
+  assert.equal(requiresTarget(cog), false);
+  assert.equal(canAddAsset(drawable, "data", zarr), true);
+  assert.deepEqual(assetTargets(drawable, "data", cog), []);
+  // A store whose variables are all one-dimensional has nothing to draw, so Add stays dead.
+  assert.equal(canAddAsset(item({ flat: { dimensions: ["time"] } }), "data", zarr), false);
+  assert.equal(canAddAsset(drawable, "data", cog), true);
+});
+
+test("an asset's own storage options outrank the ones beside them", async () => {
+  const fetcher = (async () =>
+    jsonResponse({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          id: "both-options",
+          geometry: null,
+          collection: "era5-pds",
+          properties: {
+            datetime: "2020-12-01T00:00:00Z",
+            "table:storage_options": { account_name: "itemaccount" },
+          },
+          assets: {
+            tasmax: {
+              href: "abfs://era5/a.zarr",
+              type: "application/vnd+zarr",
+              "table:storage_options": { account_name: "assetaccount" },
+              "xarray:open_kwargs": { storage_options: { account_name: "xarrayaccount" } },
+            },
+          },
+        },
+      ],
+      links: [],
+    })) as typeof fetch;
+  const result = await searchStacApi(
+    {
+      url: "https://planetarycomputer.microsoft.com/api/stac/v1/",
+      title: "Planetary Computer",
+      isApi: true,
+      searchUrl: "https://planetarycomputer.microsoft.com/api/stac/v1/search",
+      collections: [],
+      root: {},
+    },
+    { limit: 10 },
+    fetcher,
+  );
+  assert.equal(
+    result.items[0].assets.tasmax.href,
+    "https://assetaccount.blob.core.windows.net/era5/a.zarr",
   );
 });

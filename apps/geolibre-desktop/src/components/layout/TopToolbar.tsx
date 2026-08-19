@@ -940,7 +940,11 @@ export function TopToolbar({
       formatGeoJson: t("stacPlugin.formatGeoJson"),
       formatPmtiles: t("stacPlugin.formatPmtiles"),
       formatParquet: t("stacPlugin.formatParquet"),
+      formatZarr: t("stacPlugin.formatZarr"),
       formatUnknown: t("stacPlugin.formatUnknown"),
+      addNoTarget: t("stacPlugin.addNoTarget"),
+      addIcechunk: t("stacPlugin.addIcechunk"),
+      chooseTarget: t("stacPlugin.chooseTarget"),
       notAddable: t("stacPlugin.notAddable"),
     });
   }, [t]);

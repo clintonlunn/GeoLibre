@@ -34,6 +34,10 @@ export interface StacAsset {
    * account out of the URL and name it here — the href's first segment is the *container*.
    */
   "table:storage_options"?: { account_name?: string };
+  /** Where a Zarr asset names that same account. */
+  "xarray:open_kwargs"?: { storage_options?: { account_name?: string } };
+  /** Present on an Icechunk store, which is a manifest rather than a Zarr hierarchy. */
+  "icechunk:branch"?: string;
 }
 
 export interface StacItem extends Feature<Geometry | null> {
@@ -239,7 +243,10 @@ function normalizeItem(item: StacItem, base: string): StacItem {
   const assets = Object.fromEntries(
     Object.entries(item.assets ?? {}).flatMap(([key, asset]) => {
       if (!asset?.href) return [];
-      const account = asset["table:storage_options"]?.account_name ?? itemAccount;
+      const account =
+        asset["table:storage_options"]?.account_name ??
+        asset["xarray:open_kwargs"]?.storage_options?.account_name ??
+        itemAccount;
       try {
         return [[key, { ...asset, href: browserAssetHref(asset.href, base, account) }]];
       } catch {
@@ -271,13 +278,11 @@ function folderName(href: string): string {
 function catalogChildren(document: Record<string, unknown>, base: string): StacCatalogNode[] {
   return linksOf(document.links, base)
     .filter((link) => link.rel === "child")
-    .map(
-      (link): StacCatalogNode => ({
-        href: link.href,
-        title: link.title || folderName(link.href),
-        kind: /\/collection\.json($|[?#])/i.test(link.href) ? "collection" : "container",
-      }),
-    );
+    .map((link): StacCatalogNode => ({
+      href: link.href,
+      title: link.title || folderName(link.href),
+      kind: /\/collection\.json($|[?#])/i.test(link.href) ? "collection" : "container",
+    }));
 }
 
 /**
@@ -590,7 +595,7 @@ export function itemBbox(item: StacItem): [number, number, number, number] | und
 }
 
 /** A format {@link assetFormat} recognizes, and {@link visualizeAsset} knows how to add. */
-export type StacAssetFormat = "pmtiles" | "geojson" | "cog" | "parquet";
+export type StacAssetFormat = "pmtiles" | "geojson" | "cog" | "parquet" | "zarr";
 export type StacAssetDisplayFormat = StacAssetFormat;
 
 interface AssetFormatRule {
@@ -607,6 +612,7 @@ const ASSET_FORMATS: readonly AssetFormatRule[] = [
   { format: "geojson", mediaType: "geo+json", extension: /\.geojson($|\?)/i },
   { format: "cog", mediaType: "geotiff", extension: /\.tiff?($|\?)/i },
   { format: "parquet", mediaType: "parquet", extension: /\.parquet($|\?)/i },
+  { format: "zarr", mediaType: "zarr", extension: /\.zarr\/?($|\?)/i },
 ];
 
 export function assetDisplayFormat(asset: StacAsset): StacAssetDisplayFormat | null {
@@ -643,4 +649,112 @@ function isFetchableHref(href: string): boolean {
 
 export function isVisualizableAsset(asset: StacAsset): boolean {
   return assetFormat(asset) !== null;
+}
+
+/** One of the things inside an asset that can become a layer. */
+export interface AssetTarget {
+  /** What the reader is asked for: a Zarr variable today, a PMTiles source layer later. */
+  id: string;
+  label: string;
+}
+
+/** An object's own entries, or none when it is anything else — an array included. */
+function entriesOf(value: unknown): [string, Record<string, unknown>][] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+  return Object.entries(value).map(([key, entry]) => [
+    key,
+    (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>,
+  ]);
+}
+
+/**
+ * The arrays in a Zarr store that can be drawn: those spanning two of the item's spatial
+ * dimensions, which leaves out coordinate bounds and other one-dimensional companions.
+ */
+export function zarrTargets(item: StacItem, assetKey: string): AssetTarget[] {
+  const spatial = new Set(
+    entriesOf(item.properties?.["cube:dimensions"])
+      .filter(([, dimension]) => dimension.type === "spatial")
+      .map(([name]) => name),
+  );
+  const drawable = entriesOf(item.properties?.["cube:variables"]).filter(([, variable]) => {
+    const dimensions = variable.dimensions;
+    return (
+      Array.isArray(dimensions) &&
+      dimensions.filter((name) => spatial.has(String(name))).length >= 2
+    );
+  });
+  // An asset keyed by a variable holds that one, not the whole store (Planetary Computer).
+  const named = drawable.filter(([name]) => name === assetKey);
+  return (named.length ? named : drawable).map(([name, variable]) => ({
+    id: name,
+    label: typeof variable.unit === "string" ? `${name} (${variable.unit})` : name,
+  }));
+}
+
+/**
+ * Where a Zarr asset's store begins, and the array inside it the href points at. Catalogs address
+ * either the whole store or one array within it (EOPF names a Sentinel band that way).
+ */
+export function zarrStorePath(href: string): { url: string; path?: string } {
+  const marker = /\.zarr\//i.exec(href);
+  if (!marker) return { url: href };
+  const cut = marker.index + ".zarr".length;
+  const path = href.slice(cut + 1);
+  return path ? { url: href.slice(0, cut), path } : { url: href.slice(0, cut) };
+}
+
+/** What the Zarr renderer is asked for: the store, the array inside it, and how to colour it. */
+export interface ZarrLayerRequest {
+  url: string;
+  variable: string;
+  colormap?: string;
+  clim?: [number, number];
+}
+
+/**
+ * Turns an asset href and the panel's raster options into a Zarr layer request. The options are
+ * shared with COG, and without a range a store whose values sit outside the renderer's default
+ * paints as one flat wash.
+ */
+export function zarrLayerRequest(
+  href: string,
+  variable: string,
+  options: { colormap?: string; rescaleMin?: number; rescaleMax?: number } = {},
+): ZarrLayerRequest {
+  const { colormap, rescaleMin, rescaleMax } = options;
+  return {
+    url: zarrStorePath(href).url,
+    variable,
+    ...(colormap ? { colormap } : {}),
+    // Half a range would leave the renderer to invent the other end, so both bounds or neither.
+    ...(rescaleMin !== undefined && rescaleMax !== undefined
+      ? { clim: [rescaleMin, rescaleMax] as [number, number] }
+      : {}),
+  };
+}
+
+/** What the panel would add from an asset, for the formats that hold more than one thing. */
+export function assetTargets(item: StacItem, key: string, asset: StacAsset): AssetTarget[] {
+  if (assetFormat(asset) !== "zarr") return [];
+  // An href reaching into the store already names its array; there is nothing left to choose.
+  const { path } = zarrStorePath(asset.href);
+  if (path) return [{ id: path, label: asset.title || path.split("/").pop() || path }];
+  return zarrTargets(item, key);
+}
+
+/** Icechunk keeps its objects behind a manifest, so the URL-driven Zarr reader cannot open one. */
+export function isIcechunkAsset(asset: StacAsset): boolean {
+  return typeof asset["icechunk:branch"] === "string";
+}
+
+/** Whether a format is one whose assets are read one target at a time. */
+export function requiresTarget(asset: StacAsset): boolean {
+  return assetFormat(asset) === "zarr";
+}
+
+/** Whether Add can proceed: a format the panel draws, holding something it can draw. */
+export function canAddAsset(item: StacItem, key: string, asset: StacAsset): boolean {
+  if (!isVisualizableAsset(asset) || isIcechunkAsset(asset)) return false;
+  return !requiresTarget(asset) || assetTargets(item, key, asset).length > 0;
 }

@@ -2342,7 +2342,7 @@ function applyZarrLayerBounds(layerId: string, bounds: [number, number, number, 
 
 /** Options for {@link addZarrRasterLayer}. */
 export interface ZarrRasterLayerOptions {
-  /** URL of the Zarr store (Zarr v2/v3, Icechunk over HTTP). */
+  /** URL of a plain Zarr store (v2/v3). An Icechunk repository is read through `store`. */
   url: string;
   /** Layer name shown in the Layers panel. Defaults to `<store> - <variable>`. */
   name?: string;
