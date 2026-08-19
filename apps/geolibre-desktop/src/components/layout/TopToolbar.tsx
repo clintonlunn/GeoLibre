@@ -960,6 +960,7 @@ export function TopToolbar({
       addNoTarget: t("stacPlugin.addNoTarget"),
       addIcechunk: t("stacPlugin.addIcechunk"),
       zarrProblem: (problem) => t(ZARR_PROBLEM_KEYS[problem]),
+      chooseTarget: t("stacPlugin.chooseTarget"),
     });
   }, [t]);
 
