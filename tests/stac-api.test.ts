@@ -1637,6 +1637,9 @@ test("a Zarr store's drawable targets are its spatial variables", () => {
     { id: "tasmax", label: "tasmax (K)" },
   ]);
   assert.deepEqual(zarrTargets(item({ flat: { dimensions: ["time"] } }), "data"), []);
+  // A key that names a variable the store cannot draw holds nothing: the item's other variables
+  // belong to other assets' stores, so offering them would name arrays that are not there.
+  assert.deepEqual(zarrTargets(era5, "time1_bounds"), []);
   // A list where an object belongs would otherwise yield indices as variable names.
   assert.deepEqual(
     zarrTargets({ ...era5, properties: { "cube:variables": ["precip"] } }, "data"),
@@ -1716,6 +1719,18 @@ test("a projected Zarr store carries its CRS, and WGS84 stays implicit", () => {
         "cube:dimensions": {
           x: { type: "spatial", reference_system: 32612 },
           time: { type: "temporal", reference_system: 4326 },
+        },
+      }),
+      asset,
+    ),
+    "EPSG:32612",
+  );
+  // The datacube extension also allows an OGC CRS URI rather than a code.
+  assert.equal(
+    zarrCrs(
+      item({
+        "cube:dimensions": {
+          x: { type: "spatial", reference_system: "http://www.opengis.net/def/crs/EPSG/0/32612" },
         },
       }),
       asset,

@@ -791,9 +791,12 @@ export function zarrTargets(item: StacItem, assetKey: string): AssetTarget[] {
       dimensions.filter((name) => spatial.has(String(name))).length >= 2
     );
   });
-  // An asset keyed by a variable holds that one, not the whole store (Planetary Computer).
+  // An asset keyed by a variable holds that one, not the whole store (Planetary Computer). A key
+  // that names a variable which cannot be drawn holds nothing — offering the item's other
+  // variables would name arrays that asset's own store may not contain.
   const named = drawable.filter(([name]) => name === assetKey);
-  return (named.length ? named : drawable).map(([name, variable]) => ({
+  const keyed = entriesOf(item.properties?.["cube:variables"]).some(([name]) => name === assetKey);
+  return (named.length || keyed ? named : drawable).map(([name, variable]) => ({
     id: name,
     label: typeof variable.unit === "string" ? `${name} (${variable.unit})` : name,
   }));
@@ -849,6 +852,9 @@ function epsgCode(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   if (/^epsg:\d+$/i.test(trimmed)) return trimmed.toUpperCase();
+  // The datacube extension also allows an OGC CRS URI, e.g. `…/def/crs/EPSG/0/32612`.
+  const uri = /\/def\/crs\/EPSG\/\d+\/(\d+)$/i.exec(trimmed);
+  if (uri) return `EPSG:${uri[1]}`;
   return /^\d+$/.test(trimmed) ? `EPSG:${trimmed}` : undefined;
 }
 
