@@ -25,6 +25,15 @@ export interface StacLink {
   body?: Record<string, unknown>;
 }
 
+/** The Azure account a catalog names beside an href, in either of the two spellings in use. */
+interface StorageOptions {
+  account_name?: string;
+}
+
+interface XarrayOpenKwargs {
+  storage_options?: StorageOptions;
+}
+
 export interface StacAsset {
   href: string;
   title?: string;
@@ -34,23 +43,14 @@ export interface StacAsset {
    * Table extension storage options. Catalogs that publish `abfs://` hrefs keep the Azure
    * account out of the URL and name it here — the href's first segment is the *container*.
    */
-  "table:storage_options"?: { account_name?: string };
+  "table:storage_options"?: StorageOptions;
   /** Where a Zarr asset names that same account. */
-  "xarray:open_kwargs"?: { storage_options?: { account_name?: string } };
+  "xarray:open_kwargs"?: XarrayOpenKwargs;
   /** Present on an Icechunk store, which is a manifest rather than a Zarr hierarchy. */
   "icechunk:branch"?: string;
   /** Projection extension code, e.g. `EPSG:32632`, when the asset is not in WGS84. */
   "proj:code"?: string;
   "proj:epsg"?: number;
-}
-
-/** The Azure account a catalog names beside an href, in either of the two spellings in use. */
-interface StorageOptions {
-  account_name?: string;
-}
-
-interface XarrayOpenKwargs {
-  storage_options?: StorageOptions;
 }
 
 export interface StacItem extends Feature<Geometry | null> {
@@ -1004,7 +1004,7 @@ export async function zarrTargetCheck(
     } catch (error) {
       // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
       if (error instanceof DOMException && error.name === "AbortError") throw error;
-      return "unavailable";
+      return refused ? "unauthorized" : "unavailable";
     }
   }
   return refused ? "unauthorized" : "unavailable";

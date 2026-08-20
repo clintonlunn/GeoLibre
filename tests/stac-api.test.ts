@@ -1937,6 +1937,13 @@ test("a Zarr variable check says which problem it found, not merely that there w
   }) as unknown as typeof fetch;
   assert.equal(await zarrTargetCheck(store, "sst", rejecting), "unavailable");
   assert.equal(blocked.length, 1);
+
+  // A refusal already seen still explains a later failure: the host asked for a token first.
+  const refusedThenBlocked = (async (url: string) => {
+    if (String(url).endsWith("zarr.json")) return new Response("", { status: 403 });
+    throw new TypeError("Failed to fetch");
+  }) as unknown as typeof fetch;
+  assert.equal(await zarrTargetCheck(store, "sst", refusedThenBlocked), "unauthorized");
 });
 
 test("Add waits on a choice only for the formats that hold several layers", () => {

@@ -736,10 +736,10 @@ async function visualizeAsset(
       });
       // The renderer places the data from the store's own coordinates and records no extent, so
       // Zoom to layer has nothing to fly to. The item's bbox is WGS84, which is what it wants.
-      const layer = layerId
-        ? useAppStore.getState().layers.find((entry) => entry.id === layerId)
-        : undefined;
-      if (layerId && layer) {
+      // `addZarrRasterLayer` throws rather than resolving without an id, so the layer is either
+      // in the store or we never got here.
+      const layer = useAppStore.getState().layers.find((entry) => entry.id === layerId);
+      if (layer) {
         useAppStore
           .getState()
           .updateLayer(layerId, { metadata: withItemBounds(layer.metadata, item) });
