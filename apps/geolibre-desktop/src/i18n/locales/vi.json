@@ -4071,6 +4071,7 @@
       "untitledModel": "Mô hình chưa đặt tên",
       "newModel": "Mới",
       "discardChanges": "Hủy các thay đổi chưa được lưu đối với mô hình hiện tại?",
+      "discardRunning": "Một lần chạy mô hình vẫn đang diễn ra. Dừng lại và tiếp tục?",
       "arrange": "Sắp xếp",
       "arrangeHint": "Sắp xếp các nút theo dòng xử lý",
       "runModel": "Chạy",
@@ -5493,6 +5494,7 @@
     "scope": "Phạm vi",
     "scopeAll": "Tất cả các tính năng ({{total}})",
     "scopeFiltered": "Đã lọc ({{total}})",
+    "scopeSelected": "Đã chọn ({{total}})",
     "copiedToClipboard": "Đã sao chép vào bảng nhớ tạm.",
     "stat": {
       "min": "tối thiểu",
@@ -5509,6 +5511,7 @@
     "copy": "tối thiểu",
     "copyHeader": "Thống kê hiện trường — {{field}}",
     "copyHeaderFiltered": "Thống kê hiện trường — {{field}} (đã lọc)",
+    "copyHeaderSelected": "Thống kê hiện trường — {{field}} (đã chọn)",
     "noValues": "Không có giá trị để tóm tắt.",
     "mostFrequent": "Giá trị thường xuyên nhất",
     "noPopulated": "Không có giá trị được điền."
