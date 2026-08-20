@@ -9,6 +9,8 @@ import {
   searchStacApi,
   type StacItem,
   zarrLayerRequest,
+  zarrStorePath,
+  zarrTargetCheck,
 } from "../packages/plugins/src/plugins/stac-api";
 
 // Responses captured from the live catalogs. Zarr is published in shapes no single catalog shows,
@@ -83,4 +85,15 @@ test("EOPF's Sentinel-2 assets address an array inside the store", async () => {
   const request = zarrLayerRequest(asset.href, target.id);
   assert.match(request.url, /\.zarr$/);
   assert.equal(request.variable, "measurements/reflectance/r10m/b02");
+
+  // The variable *is* the embedded path, so the preflight asks about the array the href names
+  // rather than a sibling of the store root.
+  const { url, path } = zarrStorePath(asset.href);
+  assert.equal(path, target.id);
+  const probed: string[] = [];
+  await zarrTargetCheck(url, target.id, (async (probe: string) => {
+    probed.push(String(probe));
+    return new Response(JSON.stringify({ node_type: "array" }), { status: 200 });
+  }) as unknown as typeof fetch);
+  assert.deepEqual(probed, [`${url}/measurements/reflectance/r10m/b02/zarr.json`]);
 });
