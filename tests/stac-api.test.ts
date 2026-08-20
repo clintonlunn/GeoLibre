@@ -1964,6 +1964,13 @@ test("Add waits on a choice only for the formats that hold several layers", () =
   // An Icechunk repository is a manifest, not a Zarr hierarchy: the URL reader cannot open it.
   assert.equal(canAddAsset(drawable, "data", { ...zarr, "icechunk:branch": "main" }), false);
   assert.equal(isIcechunkAsset(zarr), false);
+  // A catalog may say it once on the item rather than on every asset it publishes.
+  const icechunkItem = {
+    ...drawable,
+    properties: { ...drawable.properties, "icechunk:branch": "main" },
+  } as StacItem;
+  assert.equal(isIcechunkAsset(zarr, icechunkItem), true);
+  assert.equal(canAddAsset(icechunkItem, "data", zarr), false);
 
   assert.equal(requiresTarget(zarr), true);
   assert.equal(requiresTarget(cog), false);

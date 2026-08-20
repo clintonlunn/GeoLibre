@@ -405,8 +405,8 @@ export interface GeoLibreAppAPI {
   /**
    * Add a Zarr layer rendered by the **host's own** `@carbonplan/zarr-layer`
    * instance, returning a promise for the new layer's id. The Zarr counterpart
-   * of {@link addCogLayer}: it reads the store directly (Zarr v2/v3, Icechunk
-   * over HTTP), reprojects on the GPU when `crs`/`proj4` is given, and mirrors
+   * of {@link addCogLayer}: it reads the store directly (Zarr v2/v3 over HTTP),
+   * reprojects on the GPU when `crs`/`proj4` is given, and mirrors
    * the layer into the Layers panel with working visibility, opacity, ordering,
    * and removal.
    *

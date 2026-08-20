@@ -62,6 +62,7 @@ export interface StacItem extends Feature<Geometry | null> {
     start_datetime?: string;
     "table:storage_options"?: StorageOptions;
     "xarray:open_kwargs"?: XarrayOpenKwargs;
+    "icechunk:branch"?: string;
   };
   assets: Record<string, StacAsset>;
   links?: StacLink[];
@@ -1030,9 +1031,16 @@ export function assetTargets(item: StacItem, key: string, asset: StacAsset): Ass
   return zarrTargets(item, key);
 }
 
-/** Icechunk keeps its objects behind a manifest, so the URL-driven Zarr reader cannot open one. */
-export function isIcechunkAsset(asset: StacAsset): boolean {
-  return typeof asset["icechunk:branch"] === "string";
+/**
+ * Icechunk keeps its objects behind a manifest, so the URL-driven Zarr reader cannot open one.
+ * Read from the item as well as the asset, the way the storage options are: a catalog is free to
+ * say it once for every asset it publishes.
+ */
+export function isIcechunkAsset(asset: StacAsset, item?: StacItem): boolean {
+  return (
+    typeof asset["icechunk:branch"] === "string" ||
+    typeof item?.properties?.["icechunk:branch"] === "string"
+  );
 }
 
 /** Whether a format is one whose assets are read one target at a time. */
@@ -1042,6 +1050,6 @@ export function requiresTarget(asset: StacAsset): boolean {
 
 /** Whether Add can proceed: a format the panel draws, holding something it can draw. */
 export function canAddAsset(item: StacItem, key: string, asset: StacAsset): boolean {
-  if (!isVisualizableAsset(asset) || isIcechunkAsset(asset)) return false;
+  if (!isVisualizableAsset(asset) || isIcechunkAsset(asset, item)) return false;
   return !requiresTarget(asset) || assetTargets(item, key, asset).length > 0;
 }

@@ -628,7 +628,7 @@ function assetFormatLabel(asset: StacAsset): string {
 function addReason(item: StacItem, key: string, asset: StacAsset): string {
   if (canAddAsset(item, key, asset)) return asset.href;
   if (!isVisualizableAsset(asset)) return labels.addUnsupported;
-  if (isIcechunkAsset(asset)) return labels.addIcechunk;
+  if (isIcechunkAsset(asset, item)) return labels.addIcechunk;
   return labels.addNoTarget;
 }
 
@@ -716,7 +716,7 @@ async function visualizeAsset(
     }
     case "zarr": {
       if (!appRef) throw new Error(labels.addFailed);
-      if (isIcechunkAsset(asset)) throw new Error(labels.addIcechunk);
+      if (isIcechunkAsset(asset, item)) throw new Error(labels.addIcechunk);
       const variable = target ?? assetTargets(item, key, asset)[0]?.id;
       if (!variable) throw new Error(labels.addNoTarget);
       // Deliberately unsigned: a store is read key by key, and a token in the URL cannot survive
