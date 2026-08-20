@@ -1640,6 +1640,44 @@ test("a Zarr store's drawable targets are its spatial variables", () => {
   // A key that names a variable the store cannot draw holds nothing: the item's other variables
   // belong to other assets' stores, so offering them would name arrays that are not there.
   assert.deepEqual(zarrTargets(era5, "time1_bounds"), []);
+
+  // Two spatial dimensions are not enough when a catalog names its axes: a vertical
+  // cross-section spans latitude and depth, and the renderer draws a horizontal raster.
+  const profile: StacItem = {
+    type: "Feature",
+    id: "profile",
+    geometry: null,
+    properties: {
+      "cube:dimensions": {
+        lat: { type: "spatial", axis: "y" },
+        lon: { type: "spatial", axis: "x" },
+        depth: { type: "spatial", axis: "z" },
+      },
+      "cube:variables": {
+        section: { dimensions: ["lat", "depth"], unit: "degC" },
+        surface: { dimensions: ["lat", "lon"], unit: "degC" },
+      },
+    },
+    assets: {},
+  };
+  assert.deepEqual(zarrTargets(profile, "data"), [{ id: "surface", label: "surface (degC)" }]);
+
+  // A cube that labels only some of its axes says less than it appears to, so the pair is judged
+  // only when every spatial dimension it spans is named.
+  const halfLabelled: StacItem = {
+    type: "Feature",
+    id: "half-labelled",
+    geometry: null,
+    properties: {
+      "cube:dimensions": {
+        lat: { type: "spatial", axis: "y" },
+        lon: { type: "spatial" },
+      },
+      "cube:variables": { sst: { dimensions: ["lat", "lon"], unit: "degC" } },
+    },
+    assets: {},
+  };
+  assert.deepEqual(zarrTargets(halfLabelled, "data"), [{ id: "sst", label: "sst (degC)" }]);
   // A list where an object belongs would otherwise yield indices as variable names.
   assert.deepEqual(
     zarrTargets({ ...era5, properties: { "cube:variables": ["precip"] } }, "data"),

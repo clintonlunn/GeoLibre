@@ -793,23 +793,31 @@ function entriesOf(value: unknown): [string, Record<string, unknown>][] {
  * dimensions, which leaves out coordinate bounds and other one-dimensional companions.
  */
 export function zarrTargets(item: StacItem, assetKey: string): AssetTarget[] {
-  const spatial = new Set(
-    entriesOf(item.properties?.["cube:dimensions"])
-      .filter(([, dimension]) => dimension.type === "spatial")
-      .map(([name]) => name),
+  const spatialDimensions = entriesOf(item.properties?.["cube:dimensions"]).filter(
+    ([, dimension]) => dimension.type === "spatial",
   );
-  const drawable = entriesOf(item.properties?.["cube:variables"]).filter(([, variable]) => {
+  const spatial = new Set(spatialDimensions.map(([name]) => name));
+  const axisOf = new Map(
+    spatialDimensions.map(([name, dimension]) => [name, String(dimension.axis ?? "")]),
+  );
+  const declared = entriesOf(item.properties?.["cube:variables"]);
+  const drawable = declared.filter(([, variable]) => {
     const dimensions = variable.dimensions;
-    return (
-      Array.isArray(dimensions) &&
-      dimensions.filter((name) => spatial.has(String(name))).length >= 2
-    );
+    if (!Array.isArray(dimensions)) return false;
+    const across = dimensions.map(String).filter((name) => spatial.has(name));
+    if (across.length < 2) return false;
+    // The renderer draws a horizontal raster, so two spatial dimensions are not enough on their
+    // own — a vertical cross-section spans latitude and depth. Judge by the axes only when every
+    // one of them is named, since a partly labelled cube says less than it appears to.
+    const axes = across.map((name) => axisOf.get(name) ?? "");
+    if (axes.some((axis) => axis === "")) return true;
+    return axes.includes("x") && axes.includes("y");
   });
   // An asset keyed by a variable holds that one, not the whole store (Planetary Computer). A key
   // that names a variable which cannot be drawn holds nothing — offering the item's other
   // variables would name arrays that asset's own store may not contain.
   const named = drawable.filter(([name]) => name === assetKey);
-  const keyed = entriesOf(item.properties?.["cube:variables"]).some(([name]) => name === assetKey);
+  const keyed = declared.some(([name]) => name === assetKey);
   return (named.length || keyed ? named : drawable).map(([name, variable]) => ({
     id: name,
     label: typeof variable.unit === "string" ? `${name} (${variable.unit})` : name,
