@@ -797,8 +797,13 @@ export function zarrTargets(item: StacItem, assetKey: string): AssetTarget[] {
     ([, dimension]) => dimension.type === "spatial",
   );
   const spatial = new Set(spatialDimensions.map(([name]) => name));
+  // Only an axis the datacube extension defines counts as named; anything else — a spelling the
+  // spec does not use, a number — says nothing, and saying nothing is not the same as saying no.
   const axisOf = new Map(
-    spatialDimensions.map(([name, dimension]) => [name, String(dimension.axis ?? "")]),
+    spatialDimensions.map(([name, dimension]) => {
+      const axis = String(dimension.axis ?? "").toLowerCase();
+      return [name, ["x", "y", "z"].includes(axis) ? axis : ""];
+    }),
   );
   const declared = entriesOf(item.properties?.["cube:variables"]);
   const drawable = declared.filter(([, variable]) => {

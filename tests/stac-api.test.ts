@@ -1678,6 +1678,56 @@ test("a Zarr store's drawable targets are its spatial variables", () => {
     assets: {},
   };
   assert.deepEqual(zarrTargets(halfLabelled, "data"), [{ id: "sst", label: "sst (degC)" }]);
+
+  // An axis written in a spelling the extension does not use tells us nothing, so it must not be
+  // read as "not horizontal" — that would drop every variable a such a catalog publishes.
+  const shouted: StacItem = {
+    type: "Feature",
+    id: "shouted",
+    geometry: null,
+    properties: {
+      "cube:dimensions": {
+        lat: { type: "spatial", axis: "Y" },
+        lon: { type: "spatial", axis: "X" },
+      },
+      "cube:variables": { sst: { dimensions: ["lat", "lon"] } },
+    },
+    assets: {},
+  };
+  assert.deepEqual(zarrTargets(shouted, "data"), [{ id: "sst", label: "sst" }]);
+
+  // Nor does a value the extension never defines — a number, a compass word — say "not
+  // horizontal"; it is simply not an axis, and the spatial pair carries the decision instead.
+  const oddAxes: StacItem = {
+    type: "Feature",
+    id: "odd-axes",
+    geometry: null,
+    properties: {
+      "cube:dimensions": {
+        lat: { type: "spatial", axis: 2 },
+        lon: { type: "spatial", axis: "east" },
+      },
+      "cube:variables": { sst: { dimensions: ["lat", "lon"] } },
+    },
+    assets: {},
+  };
+  assert.deepEqual(zarrTargets(oddAxes, "data"), [{ id: "sst", label: "sst" }]);
+
+  // The same cross-section, shouted: an axis is recognized whatever its case, so this stays out.
+  const shoutedSection: StacItem = {
+    type: "Feature",
+    id: "shouted-section",
+    geometry: null,
+    properties: {
+      "cube:dimensions": {
+        lat: { type: "spatial", axis: "Y" },
+        depth: { type: "spatial", axis: "Z" },
+      },
+      "cube:variables": { section: { dimensions: ["lat", "depth"] } },
+    },
+    assets: {},
+  };
+  assert.deepEqual(zarrTargets(shoutedSection, "data"), []);
   // A list where an object belongs would otherwise yield indices as variable names.
   assert.deepEqual(
     zarrTargets({ ...era5, properties: { "cube:variables": ["precip"] } }, "data"),
