@@ -1929,14 +1929,24 @@ test("a Zarr variable check says which problem it found, not merely that there w
   );
   assert.deepEqual(asked, [], "a store that cannot take keys is never asked for one");
 
-  // A blocked host rejects rather than answering, and must not be retried key by key.
+  // A host that rejects every key is unreachable, and says so once every key has been tried.
   const blocked: string[] = [];
   const rejecting = (async (url: string) => {
     blocked.push(String(url));
     throw new TypeError("Failed to fetch");
   }) as unknown as typeof fetch;
   assert.equal(await zarrTargetCheck(store, "sst", rejecting), "unavailable");
-  assert.equal(blocked.length, 1);
+  assert.equal(blocked.length, 3);
+
+  // A gateway that omits CORS headers on its 404s throws for a key that is merely absent, so a
+  // v2 store must not be condemned by the v3 key it never had.
+  const throwsOnV3 = (async (url: string) => {
+    if (String(url).endsWith("zarr.json")) throw new TypeError("Failed to fetch");
+    return String(url).endsWith("sst/.zarray")
+      ? new Response(JSON.stringify({}), { status: 200 })
+      : new Response("", { status: 404 });
+  }) as unknown as typeof fetch;
+  assert.equal(await zarrTargetCheck(store, "sst", throwsOnV3), "array");
 
   // A refusal already seen still explains a later failure: the host asked for a token first.
   const refusedThenBlocked = (async (url: string) => {

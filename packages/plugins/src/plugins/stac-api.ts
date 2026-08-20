@@ -1003,9 +1003,11 @@ export async function zarrTargetCheck(
       if (key === ".zgroup") return "group";
       return metadata.node_type === "array" ? "array" : "group";
     } catch (error) {
-      // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
+      // Not every failure is the whole host: a gateway that omits CORS headers on its 404s throws
+      // for a key that is merely absent, so keep asking rather than condemning a store that would
+      // have answered on the next one.
       if (error instanceof DOMException && error.name === "AbortError") throw error;
-      return refused ? "unauthorized" : "unavailable";
+      continue;
     }
   }
   return refused ? "unauthorized" : "unavailable";
