@@ -91,9 +91,10 @@ test("EOPF's Sentinel-2 assets address an array inside the store", async () => {
   const { url, path } = zarrStorePath(asset.href);
   assert.equal(path, target.id);
   const probed: string[] = [];
-  await zarrTargetCheck(url, target.id, (async (probe: string) => {
+  const verdict = await zarrTargetCheck(url, target.id, (async (probe: string) => {
     probed.push(String(probe));
     return new Response(JSON.stringify({ node_type: "array" }), { status: 200 });
   }) as unknown as typeof fetch);
+  assert.equal(verdict, "array");
   assert.deepEqual(probed, [`${url}/measurements/reflectance/r10m/b02/zarr.json`]);
 });

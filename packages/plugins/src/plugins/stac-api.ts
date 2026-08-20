@@ -945,6 +945,11 @@ export type ZarrTargetCheck =
   | "unsupported-url"
   | "unavailable";
 
+/** As much of a node's metadata as the verdict depends on. */
+interface Node {
+  node_type?: string;
+}
+
 /** Statuses an object store answers with when a token is missing rather than the object. */
 const UNAUTHORIZED_STATUSES = new Set([401, 403, 409]);
 
@@ -972,16 +977,17 @@ export async function zarrTargetCheck(
         continue;
       }
       if (!response.ok) continue;
+      // A host answering 200 for everything — a CDN catch-all, a dev proxy — says nothing about
+      // the store, so every key is believed only once its body parses as metadata.
+      const metadata = await response
+        .json()
+        .then((body: unknown) => (body && typeof body === "object" ? (body as Node) : null))
+        .catch(() => null);
+      if (!metadata) continue;
       // v2 splits the answer across two files; v3 says which it is, and says so explicitly.
       if (key === ".zarray") return "array";
       if (key === ".zgroup") return "group";
-      // A proxy answering 200 with something that is not the metadata says nothing about the
-      // store, so fall through to the v2 keys rather than condemning it.
-      const metadata = await response
-        .json()
-        .then((body: unknown) => body as { node_type?: string })
-        .catch(() => null);
-      if (metadata) return metadata.node_type === "array" ? "array" : "group";
+      return metadata.node_type === "array" ? "array" : "group";
     } catch (error) {
       // A blocked or unreachable host fails every key the same way, so stop rather than retry it.
       if (error instanceof DOMException && error.name === "AbortError") throw error;

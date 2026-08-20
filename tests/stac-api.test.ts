@@ -1805,6 +1805,12 @@ test("a Zarr variable check says which problem it found, not merely that there w
         })) as unknown as typeof fetch;
   assert.equal(await zarrTargetCheck(store, "sst", htmlThenZarray), "array");
 
+  // A host answering 200 for every path proves nothing: a `.zarray` that is not metadata is
+  // not an array.
+  const catchAll = (async () =>
+    new Response("<html>index</html>", { status: 200 })) as unknown as typeof fetch;
+  assert.equal(await zarrTargetCheck(store, "sst", catchAll), "unavailable");
+
   // v2 has no node type: `.zarray` names an array, `.zgroup` names a group.
   assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/.zarray": {} })), "array");
   assert.equal(await zarrTargetCheck(store, "bands", serving({ "bands/.zgroup": {} })), "group");
