@@ -338,6 +338,9 @@ export interface AppState {
     // Story Map dialog is hidden so the user can pan/zoom/tilt the real map and
     // save the resulting camera back into this chapter (issue #775).
     storymapComposingId: string | null;
+    /** The Batch tools dialog (run one tool across many layers). */
+    batchToolsOpen: boolean;
+    /** The Model Builder canvas panel (author a processing graph). */
     modelBuilderOpen: boolean;
     /** Style Manager dialog visibility (issue #1294). */
     styleManagerOpen: boolean;
@@ -460,6 +463,7 @@ export interface AppState {
   setStorymapPanelOpen: (open: boolean) => void;
   setStorymapPresenting: (presenting: boolean, returnToEditor?: boolean) => void;
   setStorymapComposing: (chapterId: string | null) => void;
+  setBatchToolsOpen: (open: boolean) => void;
   setModelBuilderOpen: (open: boolean) => void;
   setProcessingHistoryOpen: (open: boolean) => void;
   /** Open/close Select by Expression, optionally preselecting a target layer. */
@@ -1058,6 +1062,7 @@ export const useAppStore = create<AppState>()(
         storymapPresenting: false,
         storymapReturnToEditor: false,
         storymapComposingId: null,
+        batchToolsOpen: false,
         modelBuilderOpen: false,
         styleManagerOpen: false,
         processingHistoryOpen: false,
@@ -1394,6 +1399,7 @@ export const useAppStore = create<AppState>()(
         })),
       setStorymapComposing: (chapterId) =>
         set((s) => ({ ui: { ...s.ui, storymapComposingId: chapterId } })),
+      setBatchToolsOpen: (open) => set((s) => ({ ui: { ...s.ui, batchToolsOpen: open } })),
       setModelBuilderOpen: (open) => set((s) => ({ ui: { ...s.ui, modelBuilderOpen: open } })),
       setProcessingHistoryOpen: (open) =>
         set((s) => ({ ui: { ...s.ui, processingHistoryOpen: open } })),
