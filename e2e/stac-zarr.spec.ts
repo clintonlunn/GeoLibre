@@ -174,8 +174,10 @@ test("a Zarr asset from a STAC item reaches the map as the chosen variable", asy
   await expect(add).toBeEnabled();
   await add.click();
 
-  // Named for the item, its asset and the variable actually drawn.
-  await expect(page.getByText("cube-1 — Demo cube — precipitation")).toBeVisible();
+  // Named for the item, its asset and the variable actually drawn. Scoped to the panel because
+  // the name also renders in the on-map layer control.
+  const layers = page.getByRole("complementary", { name: "Layers" });
+  await expect(layers.getByText("cube-1 — Demo cube — precipitation")).toBeVisible();
   await expect(page.getByText("Added Demo cube to the map.")).toBeVisible();
 
   // The reader was pointed at the store and read its metadata from there. Chunk reads are left
