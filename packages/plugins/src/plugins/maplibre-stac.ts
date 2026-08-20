@@ -19,6 +19,7 @@ import {
   isAzureBlobHref,
   isIcechunkAsset,
   isVisualizableAsset,
+  requiresTarget,
   itemBbox,
   loadStacIndex,
   openCatalogNode,
@@ -37,6 +38,7 @@ import {
   zarrLayerRequest,
   zarrTargetCheck,
   zarrStorePath,
+  zarrStoreTakesKeys,
 } from "./stac-api";
 import { buildCatalogTree } from "./stac-catalog-tree";
 import { el, setDisabled } from "../panel-dom";
@@ -629,6 +631,9 @@ function addReason(item: StacItem, key: string, asset: StacAsset): string {
   if (canAddAsset(item, key, asset)) return asset.href;
   if (!isVisualizableAsset(asset)) return labels.addUnsupported;
   if (isIcechunkAsset(asset, item)) return labels.addIcechunk;
+  if (requiresTarget(asset) && !zarrStoreTakesKeys(zarrStorePath(asset.href).url)) {
+    return labels.zarrProblem("unsupported-url");
+  }
   return labels.addNoTarget;
 }
 

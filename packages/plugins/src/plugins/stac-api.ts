@@ -1053,5 +1053,9 @@ export function requiresTarget(asset: StacAsset): boolean {
 /** Whether Add can proceed: a format the panel draws, holding something it can draw. */
 export function canAddAsset(item: StacItem, key: string, asset: StacAsset): boolean {
   if (!isVisualizableAsset(asset) || isIcechunkAsset(asset, item)) return false;
-  return !requiresTarget(asset) || assetTargets(item, key, asset).length > 0;
+  if (!requiresTarget(asset)) return true;
+  // Whether a store can take keys is answerable without asking the host, so answer it here rather
+  // than enabling Add and refusing the click.
+  if (!zarrStoreTakesKeys(zarrStorePath(asset.href).url)) return false;
+  return assetTargets(item, key, asset).length > 0;
 }

@@ -1989,6 +1989,13 @@ test("Add waits on a choice only for the formats that hold several layers", () =
   // A store whose variables are all one-dimensional has nothing to draw, so Add stays dead.
   assert.equal(canAddAsset(item({ flat: { dimensions: ["time"] } }), "data", zarr), false);
   assert.equal(canAddAsset(drawable, "data", cog), true);
+
+  // A store URL that cannot take keys is answerable without asking the host, so Add is refused up
+  // front rather than enabled and then failed on the click.
+  assert.equal(
+    canAddAsset(drawable, "data", { ...zarr, href: "https://example.com/a.zarr?sig=abc" }),
+    false,
+  );
 });
 
 test("an item names the Zarr account in either spelling, as an asset does", async () => {
