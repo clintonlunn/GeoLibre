@@ -5,6 +5,9 @@ import {
   DEFAULT_ICECHUNK_BRANCH,
   icechunkTimeAttributesReader,
   openIcechunkStore,
+  repositoryKey,
+  shareRepositoryOpen,
+  type ZarrKeyReader,
 } from "../packages/plugins/src/plugins/stac-icechunk.ts";
 
 const encode = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
@@ -81,5 +84,89 @@ describe("openIcechunkStore", () => {
 
   it("names the branch a catalog publishes nothing for", () => {
     assert.equal(DEFAULT_ICECHUNK_BRANCH, "main");
+  });
+});
+
+// A cube's variables are added one at a time, so the open is shared. The caching, the eviction and
+// the abort all live here rather than behind the network, and are driven with an opener a test
+// settles by hand.
+describe("shareRepositoryOpen", () => {
+  const reader = (name: string) => ({ get: async () => new TextEncoder().encode(name) });
+
+  it("opens once and hands the same reader to every later caller", async () => {
+    __resetIcechunkRepositoriesForTests();
+    let opens = 0;
+    const open = async () => {
+      opens += 1;
+      return reader("a");
+    };
+    const first = await shareRepositoryOpen(repositoryKey("repo", "main"), open);
+    const second = await shareRepositoryOpen(repositoryKey("repo", "main"), open);
+    assert.equal(opens, 1, "the second add reuses the walk the first paid for");
+    assert.equal(first, second);
+    // A different branch of the same repository is a different snapshot, so it opens on its own.
+    await shareRepositoryOpen(repositoryKey("repo", "dev"), open);
+    assert.equal(opens, 2);
+    // Two catalogs whose url and branch merely concatenate alike stay separate entries.
+    await shareRepositoryOpen(repositoryKey("https://host/a|b", "c"), open);
+    await shareRepositoryOpen(repositoryKey("https://host/a", "b|c"), open);
+    assert.equal(opens, 4, "a `|` in a URL does not let one repository answer for another");
+  });
+
+  it("leaves the moment a caller's signal fires, and keeps opening for the others", async () => {
+    __resetIcechunkRepositoriesForTests();
+    let settle: (value: ZarrKeyReader) => void = () => {};
+    const open = () =>
+      new Promise<ZarrKeyReader>((resolve) => {
+        settle = resolve;
+      });
+    const controller = new AbortController();
+    const leaving = shareRepositoryOpen("repo|main", open, controller.signal);
+    const staying = shareRepositoryOpen("repo|main", open);
+    controller.abort();
+    await assert.rejects(leaving, (error: Error) => error.name === "AbortError");
+    // The walk was never cancelled: the add that did not abort still gets its reader.
+    settle(reader("a"));
+    assert.ok(await staying);
+  });
+
+  it("refuses a caller that had already given up before it asked", async () => {
+    __resetIcechunkRepositoriesForTests();
+    const controller = new AbortController();
+    controller.abort();
+    let opened = false;
+    await assert.rejects(
+      shareRepositoryOpen(
+        "repo|main",
+        async () => {
+          opened = true;
+          return reader("a");
+        },
+        controller.signal,
+      ),
+      (error: Error) => error.name === "AbortError",
+    );
+    assert.equal(opened, false, "nothing is opened for an add that is already abandoned");
+  });
+
+  it("forgets a repository that failed, so the next add tries again", async () => {
+    __resetIcechunkRepositoriesForTests();
+    let opens = 0;
+    const open = async () => {
+      opens += 1;
+      if (opens === 1) throw new Error("unsupported spec version");
+      return reader("a");
+    };
+    await assert.rejects(shareRepositoryOpen("repo|main", open), /unsupported spec version/);
+    assert.ok(await shareRepositoryOpen("repo|main", open));
+    assert.equal(opens, 2);
+  });
+});
+
+describe("repositoryKey", () => {
+  it("keeps a url and branch that merely concatenate alike apart", () => {
+    // Both halves come from the catalog, so a crafted url must not reach another's entry.
+    assert.notEqual(repositoryKey("https://host/a|b", "c"), repositoryKey("https://host/a", "b|c"));
+    assert.equal(repositoryKey("https://host/a", "main"), repositoryKey("https://host/a", "main"));
   });
 });

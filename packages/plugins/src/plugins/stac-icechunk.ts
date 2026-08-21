@@ -68,28 +68,66 @@ export function __resetIcechunkRepositoriesForTests(): void {
  * @param url Store URL, as the catalog published it.
  * @param branch Branch to read, defaulting to {@link DEFAULT_ICECHUNK_BRANCH}.
  * @param signal Drops this caller out when the panel stops caring — clearing results or closing
- *   it. The shared open itself runs on, since another add may be waiting for the same repository.
+ *   it, at whatever point that happens. The shared open itself runs on, since another add may be
+ *   waiting for the same repository.
  * @returns A reader over the branch's current snapshot.
  */
-export async function openIcechunkStore(
+export function openIcechunkStore(
   url: string,
   branch: string = DEFAULT_ICECHUNK_BRANCH,
   signal?: AbortSignal,
 ): Promise<ZarrKeyReader> {
-  signal?.throwIfAborted();
-  const key = `${url}|${branch}`;
-  let pending = openRepositories.get(key);
-  if (!pending) {
-    // Deliberately opened without the caller's signal. The open is shared, so honouring one
-    // caller's abort would cancel it for every other add waiting on the same repository. Each
-    // caller drops out on its own signal instead, and the walk it was waiting for finishes for
-    // whoever else wanted it — a bounded read of refs and manifests, not an open-ended transfer.
-    pending = (async () => {
+  return shareRepositoryOpen(
+    repositoryKey(url, branch),
+    async () => {
       const { IcechunkStore } = await import("icechunk-js");
       // Uncast, so that a change to the library's own reader contract — the key shape above most
       // of all — fails the build rather than the layer.
       return IcechunkStore.open(url, { branch });
-    })();
+    },
+    signal,
+  );
+}
+
+/**
+ * What identifies one open repository.
+ *
+ * Encoded rather than joined, because both halves are catalog-controlled: a `|` inside a URL would
+ * otherwise let one repository's entry answer for another's.
+ *
+ * @param url Store URL, as the catalog published it.
+ * @param branch Branch being read.
+ * @returns A key distinct for every distinct pair.
+ */
+export function repositoryKey(url: string, branch: string): string {
+  return JSON.stringify([url, branch]);
+}
+
+/**
+ * Wait on the one open for a repository, starting it if nobody has.
+ *
+ * The open is deliberately started **without** any caller's signal: it is shared, so honouring one
+ * caller's abort would cancel it for every other add waiting on the same repository. Each caller
+ * leaves on its own signal instead — the moment it fires, not once the walk it stopped caring about
+ * has finished — while the walk runs on for whoever else wanted it.
+ *
+ * Everything here is free of the network and of `icechunk-js`, so the caching, the eviction and the
+ * abort are all testable with an opener that resolves when a test says so.
+ *
+ * @param key Identifies the repository and branch.
+ * @param open Starts an open. Called only when no other caller has one in flight or finished.
+ * @param signal The waiting caller's signal, if it has one.
+ * @returns A reader over the branch's snapshot, or a rejection carrying the signal's reason.
+ */
+export function shareRepositoryOpen(
+  key: string,
+  open: () => Promise<ZarrKeyReader>,
+  signal?: AbortSignal,
+): Promise<ZarrKeyReader> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  let pending = openRepositories.get(key);
+  if (!pending) {
+    pending = open();
     openRepositories.set(key, pending);
     // Only a repository that opened is kept. A failure evicts, so a store that was unreachable
     // once is retried on the next add rather than refusing for the life of the page.
@@ -98,9 +136,13 @@ export async function openIcechunkStore(
       if (openRepositories.get(key) === opening) openRepositories.delete(key);
     });
   }
-  const store = await pending;
-  signal?.throwIfAborted();
-  return store;
+  if (!signal) return pending;
+  const work = pending;
+  return new Promise<ZarrKeyReader>((resolve, reject) => {
+    const abandon = () => reject(signal.reason);
+    signal.addEventListener("abort", abandon, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abandon));
+  });
 }
 
 /**
