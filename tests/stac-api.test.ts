@@ -1901,6 +1901,15 @@ test("a Zarr variable read through a store reaches the same verdicts", async () 
   // So is a body that parses but is not a node: the store answered, just not with metadata.
   assert.equal(await zarrReaderTargetCheck(async () => encode([1, 2, 3]), "AET"), "unavailable");
   assert.equal(await zarrReaderTargetCheck(async () => encode(null), "AET"), "unavailable");
+  // Nor is a v3 node that names no kind, or names one no store has: it answered, but said nothing.
+  assert.equal(
+    await zarrReaderTargetCheck(reader({ "AET/zarr.json": { shape: [2, 2] } }), "AET"),
+    "unavailable",
+  );
+  assert.equal(
+    await zarrReaderTargetCheck(reader({ "AET/zarr.json": { node_type: "banana" } }), "AET"),
+    "unavailable",
+  );
 
   // One key refused is not the whole manifest, the same way it is not over HTTP.
   const refusesV3 = async (key: string) => {
@@ -1943,8 +1952,12 @@ test("a Zarr variable check says which problem it found, not merely that there w
     await zarrTargetCheck(store, "r10m", serving({ "r10m/zarr.json": { node_type: "group" } })),
     "group",
   );
-  // Metadata that names nothing is not an invitation to try.
-  assert.equal(await zarrTargetCheck(store, "sst", serving({ "sst/zarr.json": {} })), "group");
+  // Metadata that names nothing is not an invitation to try — and not a group either: a document
+  // that does not say which kind of node it is has told us about itself, not about the variable.
+  assert.equal(
+    await zarrTargetCheck(store, "sst", serving({ "sst/zarr.json": {} })),
+    "unavailable",
+  );
   // A 200 that is not the metadata says nothing: the v2 keys still get their turn.
   const htmlThenZarray = (async (url: string) =>
     String(url).endsWith("zarr.json")

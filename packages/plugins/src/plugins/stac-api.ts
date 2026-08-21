@@ -981,7 +981,9 @@ function nodeVerdict(key: string, body: unknown): ZarrTargetCheck | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   if (key === ".zarray") return "array";
   if (key === ".zgroup") return "group";
-  return (body as Node).node_type === "array" ? "array" : "group";
+  // A v3 node says which it is. One that says neither is not a node either, whatever else it holds.
+  const nodeType = (body as Node).node_type;
+  return nodeType === "array" || nodeType === "group" ? nodeType : null;
 }
 
 /**
