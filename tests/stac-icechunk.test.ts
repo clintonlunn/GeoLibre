@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   __resetIcechunkRepositoriesForTests,
   DEFAULT_ICECHUNK_BRANCH,
+  icechunkLayerUrl,
   icechunkTimeAttributesReader,
   openIcechunkStore,
   repositoryKey,
@@ -189,5 +190,32 @@ describe("repositoryOpenError", () => {
     } finally {
       console.error = original;
     }
+  });
+});
+
+// With a store supplied the renderer never fetches this, but it still keys the control's state, so
+// two branches of one repository must not answer to the same string.
+describe("icechunkLayerUrl", () => {
+  it("keeps two branches of one repository apart", () => {
+    const repo = "https://host/repo";
+    assert.notEqual(icechunkLayerUrl(repo, "main"), icechunkLayerUrl(repo, "dev"));
+  });
+
+  it("leaves the path — what the layer is named from — untouched", () => {
+    const added = icechunkLayerUrl("https://host/data/repo", "main");
+    assert.ok(added.startsWith("https://host/data/repo"));
+    assert.equal(new URL(added).pathname, "/data/repo");
+  });
+
+  it("survives a branch name with characters a URL would eat", () => {
+    const added = icechunkLayerUrl("https://host/repo", "release/2026 #1");
+    assert.equal(decodeURIComponent(new URL(added).hash), "#icechunk=release/2026 #1");
+  });
+
+  it("names the default branch when a catalog named none", () => {
+    assert.equal(
+      icechunkLayerUrl("https://host/repo"),
+      icechunkLayerUrl("https://host/repo", "main"),
+    );
   });
 });

@@ -114,6 +114,18 @@ export function shareRepositoryOpen(
 }
 
 /**
+ * What to add a repository's layer under.
+ *
+ * With a `store` supplied the renderer never requests this, but it still keys the control's state,
+ * so two branches of one repository must not answer to the same string — the same reason
+ * {@link localZarrStoreUrl} mints one per folder. The branch rides in the fragment, which keeps the
+ * path (what the layer is named from) intact and never reaches a server.
+ */
+export function icechunkLayerUrl(url: string, branch: string = DEFAULT_ICECHUNK_BRANCH): string {
+  return `${url}#icechunk=${encodeURIComponent(branch)}`;
+}
+
+/**
  * The error the panel shows for a repository that would not open, with the reason logged beside it.
  * `cause` alone reaches nobody — nothing reads it — while the log lands in the Diagnostics panel.
  */

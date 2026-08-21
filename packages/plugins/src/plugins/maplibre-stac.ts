@@ -47,6 +47,7 @@ import { el, setDisabled } from "../panel-dom";
 import { addVectorLayerFromUrl } from "./maplibre-vector";
 import { addZarrRasterLayer } from "./maplibre-components";
 import {
+  icechunkLayerUrl,
   icechunkTimeAttributesReader,
   openIcechunkStore,
   repositoryOpenError,
@@ -692,20 +693,17 @@ async function readableHref(item: StacItem, href: string): Promise<string> {
 }
 
 /**
- * Open the repository an Icechunk asset names. A spec version the reader cannot read fails here
- * rather than inside the renderer, where it would arrive as a blank layer.
+ * Open the repository an Icechunk asset names, on the branch its item or asset named. A spec
+ * version the reader cannot read fails here rather than inside the renderer, where it would arrive
+ * as a blank layer.
  */
 async function openIcechunkAsset(
-  item: StacItem,
   asset: StacAsset,
+  branch: string | undefined,
   signal?: AbortSignal,
 ): Promise<ZarrKeyReader> {
   try {
-    return await openIcechunkStore(
-      zarrStorePath(asset.href).url,
-      icechunkBranch(asset, item),
-      signal,
-    );
+    return await openIcechunkStore(zarrStorePath(asset.href).url, branch, signal);
   } catch (error) {
     // An add the user abandoned is not a repository that refused, so it is not reported as one.
     if (error instanceof DOMException && error.name === "AbortError") throw error;
@@ -756,8 +754,11 @@ async function visualizeAsset(
       // A repository is opened by its own reader and handed over as a store; a plain store is read
       // from its URL. Unsigned either way — a token cannot survive being followed by a key, so a
       // private container fails the check below and says so.
+      // Worked out once: the branch decides which snapshot is opened and, with it, which layer the
+      // control keys — two branches of one repository are two layers.
+      const branch = isIcechunkAsset(asset, item) ? icechunkBranch(asset, item) : undefined;
       const icechunk = isIcechunkAsset(asset, item)
-        ? await openIcechunkAsset(item, asset, signal)
+        ? await openIcechunkAsset(asset, branch, signal)
         : null;
       const { url } = zarrStorePath(asset.href);
       const checked = icechunk
@@ -779,8 +780,14 @@ async function visualizeAsset(
         name: `${name} — ${variable}`,
         // The renderer's `store` takes `get(key: string)` where the reader wants a rooted key;
         // method bivariance lets it through, and it holds because zarrita addresses keys absolutely.
+        // The url is only an identifier once a store is supplied, so it carries the branch: two
+        // branches of one repository are two layers, not one patching the other.
         ...(icechunk
-          ? { store: icechunk, readTimeAttributes: icechunkTimeAttributesReader(icechunk) }
+          ? {
+              url: icechunkLayerUrl(request.url, branch),
+              store: icechunk,
+              readTimeAttributes: icechunkTimeAttributesReader(icechunk),
+            }
           : {}),
       });
       // The renderer places the data from the store's own coordinates and records no extent, so
