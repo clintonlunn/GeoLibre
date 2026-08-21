@@ -114,6 +114,15 @@ export function shareRepositoryOpen(
 }
 
 /**
+ * The error the panel shows for a repository that would not open, with the reason logged beside it.
+ * `cause` alone reaches nobody — nothing reads it — while the log lands in the Diagnostics panel.
+ */
+export function repositoryOpenError(error: unknown, message: string): Error {
+  console.error("Icechunk repository could not be opened", error);
+  return new Error(message, { cause: error });
+}
+
+/**
  * A reader for the CF `units`/`calendar` of an Icechunk repository's coordinate. The Time Slider
  * otherwise fetches these from the store's URL, which for a repository is a run of 404s and a
  * binding that never happens.

@@ -49,6 +49,7 @@ import { addZarrRasterLayer } from "./maplibre-components";
 import {
   icechunkTimeAttributesReader,
   openIcechunkStore,
+  repositoryOpenError,
   type ZarrKeyReader,
 } from "./stac-icechunk";
 
@@ -706,10 +707,9 @@ async function openIcechunkAsset(
       signal,
     );
   } catch (error) {
+    // An add the user abandoned is not a repository that refused, so it is not reported as one.
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    // The panel says one thing; the cause names which repository, branch or spec version was
-    // refused, so it rides along rather than being swallowed.
-    throw new Error(labels.addIcechunkFailed, { cause: error });
+    throw repositoryOpenError(error, labels.addIcechunkFailed);
   }
 }
 

@@ -1883,7 +1883,8 @@ test("a Zarr variable read through a store reaches the same verdicts", async () 
     "group",
   );
   // A store that answers every key with "no such key" is telling us about the variable, not about
-  // itself: it opened, and does not hold that one.
+  // itself: it opened, and does not hold that one. Checked against dynamical.org's public
+  // archive: a variable it does not carry resolves undefined on all three keys.
   assert.equal(await zarrReaderTargetCheck(reader({}), "nope"), "missing");
   // A reader that throws on every key — a repository it cannot read at all — is the other verdict.
   assert.equal(

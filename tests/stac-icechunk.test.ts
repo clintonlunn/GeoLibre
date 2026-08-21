@@ -6,6 +6,7 @@ import {
   icechunkTimeAttributesReader,
   openIcechunkStore,
   repositoryKey,
+  repositoryOpenError,
   shareRepositoryOpen,
   type ZarrKeyReader,
 } from "../packages/plugins/src/plugins/stac-icechunk.ts";
@@ -168,5 +169,25 @@ describe("repositoryKey", () => {
     // Both halves come from the catalog, so a crafted url must not reach another's entry.
     assert.notEqual(repositoryKey("https://host/a|b", "c"), repositoryKey("https://host/a", "b|c"));
     assert.equal(repositoryKey("https://host/a", "main"), repositoryKey("https://host/a", "main"));
+  });
+});
+
+// The panel shows one sentence; the reason a repository refused has to reach a developer somehow,
+// and nothing in the app reads `cause`.
+describe("repositoryOpenError", () => {
+  it("says one thing to the panel and logs the reason behind it", () => {
+    const logged: unknown[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => logged.push(args);
+    try {
+      const refused = new Error("unsupported spec version");
+      const shown = repositoryOpenError(refused, "This Icechunk repository could not be opened");
+      assert.equal(shown.message, "This Icechunk repository could not be opened");
+      assert.equal(shown.cause, refused, "the reason rides along for anything that inspects it");
+      assert.equal(logged.length, 1, "and reaches the diagnostics panel rather than nowhere");
+      assert.ok((logged[0] as unknown[]).includes(refused));
+    } finally {
+      console.error = original;
+    }
   });
 });

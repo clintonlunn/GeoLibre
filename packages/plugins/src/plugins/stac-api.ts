@@ -993,7 +993,10 @@ export async function zarrReaderTargetCheck(
   signal?: AbortSignal,
 ): Promise<ZarrTargetCheck> {
   // "No such key" is about the variable; a throw is about the store. The difference is the two
-  // verdicts below, so which happened is remembered rather than collapsed.
+  // verdicts below, so which happened is remembered rather than collapsed. `IcechunkStore.get`
+  // catches its own `NotFoundError` and resolves undefined, so an absent variable reports
+  // `missing`; a reader that threw would report `unavailable`, which is honest for one whose
+  // absences cannot be told from its failures.
   let failed = false;
   // Both Zarr versions are asked for, as over HTTP. An Icechunk repository answers only the v3
   // name, and answers the other two from the snapshot it holds rather than by asking.
