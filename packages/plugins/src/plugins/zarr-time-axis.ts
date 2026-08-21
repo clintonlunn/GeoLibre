@@ -312,15 +312,12 @@ async function readZarrTimeAttributes(
  * Walk a coordinate's own metadata documents for its CF `units`/`calendar`.
  *
  * Both Zarr versions are tried (`.zattrs`, then a v3 node's `attributes`), each
- * at the root and one level down, because a multiscale pyramid keeps its
- * coordinates inside the first level rather than beside it.
+ * at the root and one level down, where a multiscale pyramid keeps its
+ * coordinates. The reader is the seam: over HTTP, out of a folder on disk, or
+ * through an Icechunk manifest — and only the last two can answer at all for a
+ * store whose keys are not URLs.
  *
- * The reader is the seam: a store answers this over HTTP, out of a folder on
- * disk, or through an Icechunk manifest, and only the last two can answer at all
- * for a store whose keys are not URLs.
- *
- * @param readDocument - Reads one store-relative key as parsed JSON, answering
- *   nothing for a key the store does not carry.
+ * @param readDocument - Reads one store-relative key as parsed JSON.
  * @param dimension - The coordinate's name, e.g. `"time"`.
  * @returns Its `units`/`calendar`, or null when no document declares either.
  */

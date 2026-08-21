@@ -691,9 +691,8 @@ async function readableHref(item: StacItem, href: string): Promise<string> {
 }
 
 /**
- * Open the repository an Icechunk asset names, on the branch it names. A repository written by a
- * spec version the reader does not read fails here rather than inside the renderer, where the
- * failure would arrive as a blank layer.
+ * Open the repository an Icechunk asset names. A spec version the reader cannot read fails here
+ * rather than inside the renderer, where it would arrive as a blank layer.
  */
 async function openIcechunkAsset(
   item: StacItem,
@@ -708,8 +707,8 @@ async function openIcechunkAsset(
     );
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    // The panel says one thing; the cause is what tells a developer which repository, branch or
-    // spec version was refused, so it rides along rather than being swallowed.
+    // The panel says one thing; the cause names which repository, branch or spec version was
+    // refused, so it rides along rather than being swallowed.
     throw new Error(labels.addIcechunkFailed, { cause: error });
   }
 }
@@ -754,9 +753,8 @@ async function visualizeAsset(
       if (!appRef) throw new Error(labels.addFailed);
       const variable = target ?? assetTargets(item, key, asset)[0]?.id;
       if (!variable) throw new Error(labels.addNoTarget);
-      // An Icechunk repository is a manifest: it is opened by its own reader and handed to the
-      // renderer as a store, while a plain store is read from its URL key by key. Deliberately
-      // unsigned either way — a token in a URL cannot survive being followed by a key, so a
+      // A repository is opened by its own reader and handed over as a store; a plain store is read
+      // from its URL. Unsigned either way — a token cannot survive being followed by a key, so a
       // private container fails the check below and says so.
       const icechunk = isIcechunkAsset(asset, item)
         ? await openIcechunkAsset(item, asset, signal)
@@ -779,9 +777,8 @@ async function visualizeAsset(
       const layerId = await addZarrRasterLayer(appRef, {
         ...request,
         name: `${name} — ${variable}`,
-        // The renderer's `store` takes `get(key: string)` while the reader wants a rooted key, and
-        // TypeScript's method bivariance lets the narrower one through without complaint. It holds
-        // because zarrita addresses every key absolutely — the renderer never hands it a bare one.
+        // The renderer's `store` takes `get(key: string)` where the reader wants a rooted key;
+        // method bivariance lets it through, and it holds because zarrita addresses keys absolutely.
         ...(icechunk
           ? { store: icechunk, readTimeAttributes: icechunkTimeAttributesReader(icechunk) }
           : {}),

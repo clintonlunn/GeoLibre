@@ -992,13 +992,11 @@ export async function zarrReaderTargetCheck(
   variable: string,
   signal?: AbortSignal,
 ): Promise<ZarrTargetCheck> {
-  // A reader that answers "no such key" is telling us about the variable; one that throws is
-  // telling us about itself. Which of the two happened is the difference between "this store does
-  // not hold that" and "this store could not be read", so it is remembered rather than collapsed.
+  // "No such key" is about the variable; a throw is about the store. The difference is the two
+  // verdicts below, so which happened is remembered rather than collapsed.
   let failed = false;
-  // Both Zarr versions are asked for, as over HTTP: the reader decides what a key costs, and this
-  // stays the same check whichever one is behind it. An Icechunk repository answers only the v3
-  // name, and answers the other two from the snapshot it already holds rather than by asking.
+  // Both Zarr versions are asked for, as over HTTP. An Icechunk repository answers only the v3
+  // name, and answers the other two from the snapshot it holds rather than by asking.
   for (const key of ZARR_NODE_KEYS) {
     signal?.throwIfAborted();
     let bytes: Uint8Array | undefined;
@@ -1081,9 +1079,8 @@ function storeKeyUrl(store: string, key: string): string {
 /** What the panel would add from an asset, for the formats that hold more than one thing. */
 export function assetTargets(item: StacItem, key: string, asset: StacAsset): AssetTarget[] {
   if (assetFormat(asset) !== "zarr") return [];
-  // An href reaching into the store already names its array; there is nothing left to choose. That
-  // holds for an Icechunk repository too — one naming an array inside itself is read the same way,
-  // since the reader is handed the repository root either way and the path becomes the variable.
+  // An href reaching into the store already names its array; there is nothing left to choose. An
+  // Icechunk repository is no different: the reader gets the root, the path becomes the variable.
   const path = zarrStorePath(asset.href).path;
   if (path) return [{ id: path, label: asset.title || path.split("/").pop() || path }];
   return zarrTargets(item, key);
@@ -1095,26 +1092,21 @@ export function assetTargets(item: StacItem, key: string, asset: StacAsset): Ass
  * say it once for every asset it publishes.
  */
 export function isIcechunkAsset(asset: StacAsset, item?: StacItem): boolean {
-  // Presence, not usability: a catalog that names the field at all is declaring the format, and an
-  // empty or malformed value means it named no branch rather than that this is a plain store. The
-  // two are worth separating, because falling back to the URL reader for a repository produces a
-  // run of 404s and "unavailable", while falling back to the default branch produces the layer.
+  // Presence, not usability: naming the field at all declares the format, and an empty or
+  // malformed value means no branch was named rather than that this is a plain store. Falling back
+  // to the URL reader would give 404s and "unavailable"; the default branch gives the layer.
   return "icechunk:branch" in asset || "icechunk:branch" in (item?.properties ?? {});
 }
 
 /**
- * The branch an Icechunk asset names, or undefined when it names none — leaving the default to
- * {@link openIcechunkStore}.
- *
- * The field is declared as a string, but it arrives as catalog JSON: a number, or an empty string
- * standing in for "unset", would both survive the type and reach the reader. So the value is
- * checked here rather than trusted, and this is the only reading of it.
+ * The branch an Icechunk asset names, or undefined when it names none — the default is
+ * {@link openIcechunkStore}'s. Declared a string but arriving as catalog JSON, so it is checked
+ * here rather than trusted, and this is the only reading of it.
  */
 export function icechunkBranch(asset: StacAsset, item?: StacItem): string | undefined {
   for (const value of [asset["icechunk:branch"], item?.properties?.["icechunk:branch"]]) {
-    // Trimmed on the way out as well as on the way in: a padded name is interpolated into a
-    // request path (`refs/branch.<name>/`), so accepting one form and sending another would ask
-    // the store for a branch the catalog did not name.
+    // Trimmed on the way out too: the name is interpolated into a request path, so accepting one
+    // form and sending another would ask for a branch the catalog did not name.
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
@@ -1129,11 +1121,9 @@ export function requiresTarget(asset: StacAsset): boolean {
 export function canAddAsset(item: StacItem, key: string, asset: StacAsset): boolean {
   if (!isVisualizableAsset(asset)) return false;
   if (!requiresTarget(asset)) return true;
-  // Whether a store can take keys is answerable without asking the host, so answer it here rather
-  // than enabling Add and refusing the click. This holds for an Icechunk repository too: it is
-  // read through a manifest rather than by walking a hierarchy, but the reader still asks for
-  // `<store>/<key>` (`HttpStorage.getUrl` in `icechunk-js` concatenates), so a signature or SAS
-  // token in the URL lands mid-request the same way.
+  // Answerable without asking the host, so answer it here rather than enabling Add and refusing
+  // the click. It holds for an Icechunk repository too: the manifest reader still asks for
+  // `<store>/<key>` (`HttpStorage.getUrl` concatenates), so a token in the URL lands mid-request.
   if (!zarrStoreTakesKeys(zarrStorePath(asset.href).url)) return false;
   return assetTargets(item, key, asset).length > 0;
 }
