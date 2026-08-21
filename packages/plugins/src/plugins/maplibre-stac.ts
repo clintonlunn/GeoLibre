@@ -756,10 +756,9 @@ async function visualizeAsset(
       // private container fails the check below and says so.
       // Worked out once: the branch decides which snapshot is opened and, with it, which layer the
       // control keys — two branches of one repository are two layers.
-      const branch = isIcechunkAsset(asset, item) ? icechunkBranch(asset, item) : undefined;
-      const icechunk = isIcechunkAsset(asset, item)
-        ? await openIcechunkAsset(asset, branch, signal)
-        : null;
+      const isIcechunk = isIcechunkAsset(asset, item);
+      const branch = isIcechunk ? icechunkBranch(asset, item) : undefined;
+      const icechunk = isIcechunk ? await openIcechunkAsset(asset, branch, signal) : null;
       const { url } = zarrStorePath(asset.href);
       const checked = icechunk
         ? await zarrReaderTargetCheck(

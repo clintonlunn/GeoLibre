@@ -212,6 +212,11 @@ describe("icechunkLayerUrl", () => {
     assert.equal(decodeURIComponent(new URL(added).hash), "#icechunk=release/2026 #1");
   });
 
+  it("replaces a fragment the href already carried rather than stacking one", () => {
+    const added = icechunkLayerUrl("https://host/repo#page=2", "main");
+    assert.equal(added, "https://host/repo#icechunk=main");
+  });
+
   it("names the default branch when a catalog named none", () => {
     assert.equal(
       icechunkLayerUrl("https://host/repo"),

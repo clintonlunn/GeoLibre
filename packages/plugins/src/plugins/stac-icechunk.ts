@@ -122,7 +122,9 @@ export function shareRepositoryOpen(
  * path (what the layer is named from) intact and never reaches a server.
  */
 export function icechunkLayerUrl(url: string, branch: string = DEFAULT_ICECHUNK_BRANCH): string {
-  return `${url}#icechunk=${encodeURIComponent(branch)}`;
+  // Any fragment the href already carried is dropped rather than stacked: it identifies nothing
+  // here, and two of them read as a mistake.
+  return `${url.split("#")[0]}#icechunk=${encodeURIComponent(branch)}`;
 }
 
 /**
