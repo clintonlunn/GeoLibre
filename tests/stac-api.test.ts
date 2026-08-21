@@ -1898,6 +1898,9 @@ test("a Zarr variable read through a store reaches the same verdicts", async () 
     await zarrReaderTargetCheck(async () => new TextEncoder().encode("not json"), "AET"),
     "unavailable",
   );
+  // So is a body that parses but is not a node: the store answered, just not with metadata.
+  assert.equal(await zarrReaderTargetCheck(async () => encode([1, 2, 3]), "AET"), "unavailable");
+  assert.equal(await zarrReaderTargetCheck(async () => encode(null), "AET"), "unavailable");
 
   // One key refused is not the whole manifest, the same way it is not over HTTP.
   const refusesV3 = async (key: string) => {

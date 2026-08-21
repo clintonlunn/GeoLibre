@@ -977,7 +977,8 @@ const UNAUTHORIZED_STATUSES = new Set([401, 403, 409]);
  * it is, and says so explicitly. A body that is not metadata says nothing at all.
  */
 function nodeVerdict(key: string, body: unknown): ZarrTargetCheck | null {
-  if (!body || typeof body !== "object") return null;
+  // An array parses and is `typeof "object"`, but no Zarr node is one, so it says nothing either.
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   if (key === ".zarray") return "array";
   if (key === ".zgroup") return "group";
   return (body as Node).node_type === "array" ? "array" : "group";
@@ -1013,13 +1014,15 @@ export async function zarrReaderTargetCheck(
       continue;
     }
     if (!bytes) continue;
+    // Bytes that are not usable metadata — unparseable, or parsed into something that is not a
+    // node — are the store failing to answer rather than the variable being absent, however well
+    // formed they are.
     try {
       const verdict = nodeVerdict(key, JSON.parse(new TextDecoder().decode(bytes)) as unknown);
       if (verdict) return verdict;
-    } catch {
-      // Metadata that will not parse is the store failing to answer, not the variable being absent.
       failed = true;
-      continue;
+    } catch {
+      failed = true;
     }
   }
   return failed ? "unavailable" : "missing";
