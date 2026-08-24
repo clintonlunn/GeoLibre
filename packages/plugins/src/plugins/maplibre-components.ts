@@ -9,7 +9,12 @@ import {
   setExternalNativePaintBridge,
   useAppStore,
 } from "@geolibre/core";
-import { createPMTilesStoreLayer } from "@geolibre/map/pmtiles-layer";
+import {
+  createPMTilesArchiveLayers,
+  type PMTilesStoreLayerOptions,
+} from "@geolibre/map/pmtiles-layer";
+import { addPMTilesArchive } from "./pmtiles-archive-store";
+import { stringMetadata } from "./web-service-sync";
 import type {
   QueryGeometry,
   QueryOptions,
@@ -3981,26 +3986,17 @@ function createPMTilesControl(
   const control = new PMTilesLayerControlClass(PMTILES_OPTIONS);
   control.on("collapse", () => control.hide());
   control.on("layeradd", createPMTilesLayerAddHandler());
-  control.on("layerremove", (event) => {
-    const store = useAppStore.getState();
-    const activeLayerIds = new Set(event.state.layers.map((layer) => layer.id));
-    for (const layer of store.layers) {
-      if (!isPMTilesControlLayer(layer)) continue;
-      const shouldRemove = event.layerId
-        ? layer.id === event.layerId
-        : !activeLayerIds.has(layer.id);
-      if (shouldRemove) {
-        store.removeLayer(layer.id);
-      }
-    }
-  });
+  control.on("layerremove", createPMTilesLayerRemoveHandler());
   pmtilesStoreUnsubscribe ??= useAppStore.subscribe((state, previous) => {
-    const removedLayers = previous.layers.filter(
-      (layer) =>
-        isPMTilesControlLayer(layer) && !state.layers.some((current) => current.id === layer.id),
-    );
-    for (const layer of removedLayers) {
-      pmtilesControl?.removeLayer(layer.id);
+    // Every store write lands here, and the map writes pointer coordinates on each mousemove.
+    // Only a layers action replaces the array, so identity settles it before any scanning.
+    if (state.layers === previous.layers) return;
+    for (const archiveId of pmtilesArchivesFullyRemoved(
+      previous.layers,
+      state.layers,
+      controlOwnedArchives,
+    )) {
+      pmtilesControl?.removeLayer(archiveId);
     }
   });
   return control;
@@ -4371,9 +4367,12 @@ function teardownGeoTiffRasterOverlay(app: GeoLibreAppAPI): void {
   geoTiffRasterOverlayMounted = false;
 }
 
-function teardownPMTilesControl(app: GeoLibreAppAPI): void {
+/** @internal Exported only so the control's teardown can be unit-tested. */
+export function teardownPMTilesControl(app: GeoLibreAppAPI): void {
   pmtilesStoreUnsubscribe?.();
   pmtilesStoreUnsubscribe = null;
+  // Claims belong to the control instance: a reopened panel holds nothing.
+  controlOwnedArchives.clear();
   if (pmtilesControl && pmtilesControlMounted) {
     app.removeMapControl(pmtilesControl);
   }
@@ -4796,25 +4795,66 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
   };
 }
 
-function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
+/**
+ * The archives this session's control added, and so may remove.
+ *
+ * Ownership is not `metadata.controlArchiveId`: that mark rides into the saved project and outlives
+ * the control that set it. Read as ownership, the control's clear-all — which reports an empty list
+ * rather than a layer id — would take archives it never added.
+ */
+const controlOwnedArchives = new Set<string>();
+
+/** @internal Exported only so ownership can be reset between tests. */
+export function __resetPMTilesControlOwnershipForTests(): void {
+  controlOwnedArchives.clear();
+}
+
+/** @internal Exported only so the archive's removal can be unit-tested. */
+export function createPMTilesLayerRemoveHandler(): PMTilesLayerEventHandler {
+  return (event) => {
+    const store = useAppStore.getState();
+    const removed = new Set(pmtilesLayerIdsToRemove(store.layers, event, controlOwnedArchives));
+    const dropped = store.layers.filter((layer) => removed.has(layer.id));
+    const groupIds = new Set(dropped.map((layer) => layer.groupId));
+    // Only what this event actually took: releasing every archive missing from the snapshot would
+    // hand back ownership of ones it never mentioned, and the control could then no longer clear
+    // them.
+    const releasing = new Set(
+      dropped
+        .map((layer) => layer.metadata.controlArchiveId)
+        .filter((id): id is string => typeof id === "string"),
+    );
+    for (const id of removed) {
+      store.removeLayer(id);
+    }
+    // The folder was this plugin's doing, so it goes with its last layer — unless the user put
+    // something else in it.
+    const after = useAppStore.getState();
+    for (const groupId of groupIds) {
+      if (!groupId) continue;
+      if (after.layers.some((layer) => layer.groupId === groupId)) continue;
+      after.removeLayerGroup(groupId);
+    }
+    // The control no longer has it, so neither does the claim.
+    const stillListed = new Set(event.state.layers.map((layer) => layer.id));
+    for (const archiveId of releasing) {
+      if (!stillListed.has(archiveId)) controlOwnedArchives.delete(archiveId);
+    }
+  };
+}
+
+/** @internal Exported only so the archive's grouping can be unit-tested. */
+export function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
   return (event) => {
     if (!event.layerId) return;
     const layerInfo = event.state.layers.find((layer) => layer.id === event.layerId);
     if (!layerInfo) return;
 
-    const store = useAppStore.getState();
-    const layer = pmtilesStoreLayer(event.layerId, layerInfo);
-    if (store.layers.some((item) => item.id === layer.id)) {
-      store.updateLayer(layer.id, {
-        metadata: layer.metadata,
-        opacity: layer.opacity,
-        source: layer.source,
-        style: layer.style,
-        visible: layer.visible,
-      });
-      return;
-    }
-    store.addLayer(layer);
+    addPMTilesArchive(
+      pmtilesStoreLayers(event.layerId, layerInfo),
+      pmtilesArchiveName(event.layerId, layerInfo),
+    );
+    controlOwnedArchives.add(event.layerId);
   };
 }
 
@@ -5410,11 +5450,24 @@ function createGeoTiffRasterStoreLayer(state: GeoTiffRasterLayerState): GeoLibre
   };
 }
 
-/** @internal Exported only so the control's layer shape can be unit-tested. */
-export function pmtilesStoreLayer(id: string, layerInfo: PMTilesLayerInfo): GeoLibreLayer {
-  return createPMTilesStoreLayer({
+/** @internal The layers a control-reported archive becomes. */
+export function pmtilesStoreLayers(id: string, layerInfo: PMTilesLayerInfo): GeoLibreLayer[] {
+  return createPMTilesArchiveLayers(pmtilesLayerOptions(id, layerInfo)).map((layer) => ({
+    ...layer,
+    // What the control knows this archive by. A STAC asset builds the same shape without one.
+    metadata: { ...layer.metadata, controlArchiveId: id },
+  }));
+}
+
+/** What an archive is called: the control's own name, or one read off its URL. */
+function pmtilesArchiveName(id: string, layerInfo: PMTilesLayerInfo): string {
+  return layerInfo.name || layerNameFromUrl(layerInfo.url, id);
+}
+
+function pmtilesLayerOptions(id: string, layerInfo: PMTilesLayerInfo): PMTilesStoreLayerOptions {
+  return {
     id,
-    name: layerInfo.name || layerNameFromUrl(layerInfo.url, id),
+    name: pmtilesArchiveName(id, layerInfo),
     url: layerInfo.url,
     // The control also reports "unknown", which it and the map both draw as vector tiles.
     tileType: layerInfo.tileType === "raster" ? "raster" : "vector",
@@ -5422,10 +5475,11 @@ export function pmtilesStoreLayer(id: string, layerInfo: PMTilesLayerInfo): GeoL
     opacity: layerInfo.opacity,
     style: { fillOpacity: layerInfo.tileType === "raster" ? 0.6 : 1 },
     pickable: layerInfo.pickable,
-    // The control created these MapLibre layers itself, so its ids stand rather than derived ones.
+    // The control created these MapLibre layers itself, so its ids stand rather than derived ones —
+    // for an archive that stays one layer. A split one re-derives them, scoped to the archive.
     nativeLayerIds: layerInfo.layerIds,
     ...(layerInfo.sourceLayerColors ? { sourceLayerColors: layerInfo.sourceLayerColors } : {}),
-  });
+  };
 }
 
 function createZarrStoreLayer(id: string, layerInfo: ZarrLayerInfo): GeoLibreLayer {
@@ -5639,11 +5693,66 @@ function isGeoTiffRasterLayer(layer: GeoLibreLayer): boolean {
   );
 }
 
+/**
+ * The archive a store layer belongs to. A split-out layer is named after its source layer, so its
+ * own id is one the control has never heard of; matching on it goes wrong in both directions.
+ */
+function pmtilesArchiveId(layer: GeoLibreLayer): string | undefined {
+  return stringMetadata(layer.metadata.controlArchiveId);
+}
+
+/**
+ * @internal The store layers to drop for a `layerremove`. Matched by archive, not by layer id, so
+ * removing one takes every layer split out of it and a listed archive keeps all of its own.
+ */
+export function pmtilesLayerIdsToRemove(
+  layers: readonly GeoLibreLayer[],
+  event: { layerId?: string; state: { layers: readonly { id: string }[] } },
+  owned: ReadonlySet<string>,
+): string[] {
+  const activeArchiveIds = new Set(event.state.layers.map((layer) => layer.id));
+  return layers
+    .filter((layer) => {
+      const archiveId = pmtilesArchiveId(layer);
+      if (!archiveId || !owned.has(archiveId) || !isPMTilesControlLayer(layer)) return false;
+      return event.layerId ? archiveId === event.layerId : !activeArchiveIds.has(archiveId);
+    })
+    .map((layer) => layer.id);
+}
+
+/**
+ * @internal The archives whose last layer has just left the store. Deleting one source layer leaves
+ * the rest drawing, so an archive goes only once none of its layers remain.
+ */
+export function pmtilesArchivesFullyRemoved(
+  previous: readonly GeoLibreLayer[],
+  next: readonly GeoLibreLayer[],
+  owned: ReadonlySet<string>,
+): string[] {
+  const remaining = new Set<string | undefined>();
+  const nextIds = new Set<string>();
+  for (const layer of next) {
+    nextIds.add(layer.id);
+    if (isPMTilesControlLayer(layer)) remaining.add(pmtilesArchiveId(layer));
+  }
+  const gone = new Set<string>();
+  for (const layer of previous) {
+    if (!isPMTilesControlLayer(layer)) continue;
+    if (nextIds.has(layer.id)) continue;
+    const archiveId = pmtilesArchiveId(layer);
+    // Ownership, not the mark — see `controlOwnedArchives`.
+    if (archiveId && owned.has(archiveId) && !remaining.has(archiveId)) gone.add(archiveId);
+  }
+  return [...gone];
+}
+
+/** Whether this layer came from the control: a STAC asset and a basemap extract share its shape. */
 function isPMTilesControlLayer(layer: GeoLibreLayer): boolean {
   return (
     layer.type === "pmtiles" &&
     layer.metadata.sourceKind === "pmtiles-url" &&
-    layer.metadata.externalNativeLayer === true
+    layer.metadata.externalNativeLayer === true &&
+    pmtilesArchiveId(layer) !== undefined
   );
 }
 

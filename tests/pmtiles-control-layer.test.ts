@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PMTilesLayerInfo } from "maplibre-gl-components";
 import { isPlaceholderLayer } from "../packages/map/src/placeholders";
-import { pmtilesStoreLayer } from "../packages/plugins/src/plugins/maplibre-components";
+import { pmtilesStoreLayers } from "../packages/plugins/src/plugins/maplibre-components";
 
 /** What the PMTiles control reports for an archive it has just loaded. */
 function controlLayer(patch: Partial<PMTilesLayerInfo> = {}): PMTilesLayerInfo {
@@ -17,6 +17,16 @@ function controlLayer(patch: Partial<PMTilesLayerInfo> = {}): PMTilesLayerInfo {
     pickable: true,
     ...patch,
   };
+}
+
+/**
+ * The one layer an archive of a single source layer produces. An archive holding several is split
+ * into a layer each, which `pmtiles-archive-layers.test.ts` covers.
+ */
+function pmtilesStoreLayer(id: string, info: PMTilesLayerInfo) {
+  const layers = pmtilesStoreLayers(id, info);
+  assert.equal(layers.length, 1);
+  return layers[0]!;
 }
 
 describe("the store layer the PMTiles control's layeradd produces", () => {
@@ -52,8 +62,8 @@ describe("the store layer the PMTiles control's layeradd produces", () => {
       controlLayer({ sourceLayerColors: { units: "#ff0000" } }),
     );
 
+    // The colour lands in the layer's own style, which is the only thing that paints it.
     assert.equal(layer.style.fillColor, "#ff0000");
-    assert.deepEqual(layer.metadata.sourceLayerColors, { units: "#ff0000" });
   });
 
   it("carries a picking opt-out through, rather than assuming the default", () => {

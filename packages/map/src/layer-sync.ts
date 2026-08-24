@@ -1,20 +1,25 @@
 import {
   controlRendersLayer,
   DEFAULT_LAYER_STYLE,
-  type GeoLibreLayer,
-  type ExternalNativePaintBridge,
   generatorCircleRadiusValue,
   geojsonHasZCoordinates,
   getExternalNativePaintBridge,
-  type LayerStyle,
   pluginOwnsPaint,
   proportionalRadiusExpression,
   ruleBasedVisibilityFilter,
   shouldUseTiledRendering,
   styleValue,
+  type ExternalNativePaintBridge,
+  type GeoLibreLayer,
+  type LayerStyle,
   validateMapExpression,
 } from "@geolibre/core";
-import { normalizePMTilesUrl, PMTILES_PROTOCOL, pmtilesVectorLayerId } from "./pmtiles-layer";
+import {
+  normalizePMTilesUrl,
+  PMTILES_PROTOCOL,
+  pmtilesLayerKinds,
+  pmtilesVectorLayerId,
+} from "./pmtiles-layer";
 import { encodeVectorTileLayerPart } from "./vector-tile-layer-ids";
 import { addProtocol, config } from "maplibre-gl";
 import type { GeoJSON } from "geojson";
@@ -1127,7 +1132,7 @@ function hasPMTilesNativeSourceLayer(
   sourceId: string,
   sourceLayer: string,
 ): boolean {
-  return ["fill", "line", "circle"].some((kind) =>
+  return pmtilesLayerKinds.some((kind) =>
     nativeLayerIds.includes(pmtilesVectorLayerId(sourceId, sourceLayer, kind)),
   );
 }
@@ -3629,10 +3634,16 @@ function moveLayer(map: maplibregl.Map, id: string, beforeId?: string): void {
   }
 }
 
+/** The external sources a set of layers draws from — what a removal must not pull out from under. */
+export function externalSourceIdsFor(layers: readonly GeoLibreLayer[]): Set<string> {
+  return new Set(layers.flatMap((layer) => getExternalSourceIds(layer)));
+}
+
 export function removeLayerFromMap(
   map: maplibregl.Map,
   layerId: string,
   layer?: GeoLibreLayer,
+  survivingSourceIds?: ReadonlySet<string>,
 ): void {
   // Drop cached paint-bridge state so a later layer reusing this id never
   // skips a fresh opacity/visibility apply against a new bridge.
@@ -3667,6 +3678,25 @@ export function removeLayerFromMap(
   ]) {
     if (map.getLayer(id)) map.removeLayer(id);
   }
+  // An archive's source layers share one source, so it goes only once nothing draws from it. The
+  // store half covers a layer that survives this sync; the map half covers its siblings inside one
+  // — deleting a folder removes its children in a single pass, and MapLibre reports removing a
+  // source still under a style layer as an error the user can do nothing about.
+  const stillInUse = survivingSourceIds ?? new Set<string>();
+  // Only an external source can be shared — the derived ids below are this layer's alone — so the
+  // map is asked at most once, and only when a shareable source is actually up for removal. Walked
+  // layer by layer rather than read from `getStyle()`, which serializes the whole document.
+  const shareable = new Set(getExternalSourceIds(layer));
+  let drawnSources: Set<string> | undefined;
+  const stillDrawn = (src: string): boolean => {
+    drawnSources ??= new Set(
+      map
+        .getLayersOrder()
+        .map((styleLayerId) => map.getLayer(styleLayerId)?.source)
+        .filter((source): source is string => typeof source === "string"),
+    );
+    return drawnSources.has(src);
+  };
   for (const src of [
     ...getExternalSourceIds(layer),
     sourceId(layerId),
@@ -3674,7 +3704,9 @@ export function removeLayerFromMap(
     invertedSourceId(layerId),
     generatorSourceId(layerId),
   ]) {
-    if (src && map.getSource(src)) map.removeSource(src);
+    if (!src || stillInUse.has(src) || !map.getSource(src)) continue;
+    if (shareable.has(src) && stillDrawn(src)) continue;
+    map.removeSource(src);
   }
   // Drop radius-override tracking for the removed layer's native ids so a
   // later layer reusing an id never inherits a stale restore.

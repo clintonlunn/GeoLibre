@@ -19,6 +19,9 @@ export function normalizePMTilesUrl(url: string): string {
   return url.startsWith(`${PMTILES_PROTOCOL}://`) ? url : `${PMTILES_PROTOCOL}://${url}`;
 }
 
+/** The MapLibre layers one source layer is drawn with. */
+export const pmtilesLayerKinds = ["fill", "line", "circle"] as const;
+
 export function pmtilesVectorLayerId(sourceId: string, sourceLayer: string, kind: string): string {
   return `${sourceId}-${encodeVectorTileLayerPart(sourceLayer)}-${kind}`;
 }
@@ -39,7 +42,7 @@ export function pmtilesNativeLayerIds(
     return [`${sourceId}-raster`];
   }
   return sourceLayers.flatMap((sourceLayer) =>
-    ["fill", "line", "circle"].map((kind) => pmtilesVectorLayerId(sourceId, sourceLayer, kind)),
+    pmtilesLayerKinds.map((kind) => pmtilesVectorLayerId(sourceId, sourceLayer, kind)),
   );
 }
 
@@ -61,6 +64,8 @@ export interface PMTilesStoreLayerOptions {
   sourceLayerColors?: Record<string, string>;
   /** The MapLibre ids a control created itself; derived from the naming scheme otherwise. */
   nativeLayerIds?: readonly string[];
+  /** The MapLibre source to draw from, when it is not this layer's own — a shared archive. */
+  sourceId?: string;
 }
 
 /**
@@ -70,6 +75,7 @@ export interface PMTilesStoreLayerOptions {
  */
 export function createPMTilesStoreLayer(options: PMTilesStoreLayerOptions): GeoLibreLayer {
   const { id, name, tileType } = options;
+  const sourceId = options.sourceId ?? id;
   const sourceLayers = [...options.sourceLayers];
   const url = normalizePMTilesUrl(options.url);
   const fillColor =
@@ -81,7 +87,7 @@ export function createPMTilesStoreLayer(options: PMTilesStoreLayerOptions): GeoL
     name,
     type: "pmtiles",
     source: {
-      sourceId: id,
+      sourceId,
       sourceLayers,
       tileType,
       type: tileType === "raster" ? "raster" : "vector",
@@ -104,16 +110,65 @@ export function createPMTilesStoreLayer(options: PMTilesStoreLayerOptions): GeoL
     metadata: {
       externalNativeLayer: true,
       nativeLayerIds: [
-        ...(options.nativeLayerIds ?? pmtilesNativeLayerIds(id, tileType, sourceLayers)),
+        ...(options.nativeLayerIds ?? pmtilesNativeLayerIds(sourceId, tileType, sourceLayers)),
       ],
       pickable: options.pickable ?? true,
-      sourceId: id,
+      sourceId,
       sourceKind: "pmtiles-url",
-      ...(options.sourceLayerColors ? { sourceLayerColors: options.sourceLayerColors } : {}),
       sourceLayers,
       tileType,
     },
   };
+}
+
+/**
+ * One layer per source layer in a vector archive, so the Layers panel can show, reorder, style and
+ * hide them with the machinery it already has. Raster, or a single source layer, stays one layer.
+ *
+ * All of them name the archive's one MapLibre source, so removing one must not remove it —
+ * `removeLayerFromMap` refcounts it against the survivors. That id doubles as the refcount key;
+ * anything needing the two to differ needs its own field rather than a third reader of this one.
+ */
+export function createPMTilesArchiveLayers(options: PMTilesStoreLayerOptions): GeoLibreLayer[] {
+  // Keyed by the id each source layer would take, not by its name: `encodeVectorTileLayerPart` is
+  // not injective (`a/b` and `a_2Fb` both encode to `a_2Fb`), and an archive's metadata can repeat
+  // a name outright. Either way a second layer would carry the first one's id.
+  if (options.tileType === "raster") {
+    // Raster tiles never split, so the id math below means nothing for them.
+    return [createPMTilesStoreLayer(options)];
+  }
+  const parts = new Map<string, string>();
+  for (const sourceLayer of options.sourceLayers) {
+    const id = `${options.id}-${encodeVectorTileLayerPart(sourceLayer)}`;
+    const taken = parts.get(id);
+    if (taken === undefined) {
+      parts.set(id, sourceLayer);
+    } else if (taken !== sourceLayer) {
+      // Two different names, one id: the second's features would draw nowhere. Reported rather
+      // than dropped in silence — the Diagnostics panel is where a user can see it.
+      console.warn(
+        `PMTiles archive "${options.id}": source layer "${sourceLayer}" collides with "${taken}" and is not drawn.`,
+      );
+    }
+  }
+  if (parts.size < 2) {
+    // Deduped here too, so one layer never carries the same source layer twice.
+    return [
+      createPMTilesStoreLayer({ ...options, sourceLayers: [...new Set(options.sourceLayers)] }),
+    ];
+  }
+  return [...parts].map(([id, sourceLayer]) =>
+    createPMTilesStoreLayer({
+      ...options,
+      id,
+      name: sourceLayer,
+      sourceLayers: [sourceLayer],
+      // The archive's source, and so the archive's ids: a layer deriving its own would name ids
+      // nothing on the map answers to.
+      sourceId: options.id,
+      nativeLayerIds: undefined,
+    }),
+  );
 }
 
 /** Facts about a PMTiles archive needed to build a GeoLibre layer for it. */
