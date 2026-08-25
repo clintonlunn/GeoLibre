@@ -640,3 +640,50 @@ describe("the folder an archive's source layers are added into", () => {
     );
   });
 });
+
+// A folder the user made is not the one this function adds, and a shape change must not cost them
+// the placement: the old layer is swept, its folder would prune as empty, and the replacement would
+// appear beside it in a fresh folder named after the archive.
+describe("an archive the user has filed in a folder of their own", () => {
+  beforeEach(() => {
+    __resetPMTilesControlForTests();
+    __resetReportedPMTilesSourceIdClashesForTests();
+    const state = useAppStore.getState();
+    for (const layer of [...state.layers]) state.removeLayer(layer.id);
+    for (const group of [...state.layerGroups]) state.removeLayerGroup(group.id);
+  });
+
+  const shaped = (sourceLayers: string[]) =>
+    createPMTilesArchiveLayers({
+      id: "asset-8",
+      name: "Faults",
+      url: "https://example.org/f.pmtiles",
+      tileType: "vector",
+      sourceLayers,
+    });
+
+  it("stays in that folder when a later read changes its shape", () => {
+    addPMTilesArchive(shaped(["faults"]), "Faults");
+    const store = useAppStore.getState();
+    store.addLayerGroup("My stuff", []);
+    const mine = useAppStore.getState().layerGroups.at(-1)!.id;
+    useAppStore.getState().moveLayersToGroup(["asset-8"], mine);
+
+    addPMTilesArchive(shaped(["faults", "folds"]), "Faults");
+
+    const state = useAppStore.getState();
+    assert.deepEqual(
+      state.layerGroups.map((group) => group.name),
+      ["My stuff"],
+      "no second folder named after the archive",
+    );
+    assert.deepEqual(
+      state.layers.map((layer) => [layer.id, layer.groupId]),
+      [
+        ["asset-8-faults", mine],
+        ["asset-8-folds", mine],
+      ],
+      "the split layers took the place the single layer held",
+    );
+  });
+});

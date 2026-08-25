@@ -68,6 +68,7 @@ export function addPMTilesArchive(layers: readonly GeoLibreLayer[], name: string
   // A departing layer can name native layers a survivor also names, both drawing from that one
   // source. Safe only because a sync pass runs every removal before any add
   // (`MapController.syncLayers`, `createLayerSync`); move removals after adds and this breaks.
+  let inheritedGroupId: string | undefined;
   const archiveId = layers[0]?.metadata.sourceId;
   const archiveUrl = layers[0]?.sourcePath;
   if (typeof archiveId === "string") {
@@ -91,17 +92,27 @@ export function addPMTilesArchive(layers: readonly GeoLibreLayer[], name: string
       emptied.add(stale.groupId);
       store.removeLayer(stale.id);
     }
+    // A folder the user made and filed this archive into, rather than the one added for it below.
+    // The old shape is about to be replaced, and the replacement belongs where the user put it —
+    // told apart by the name, since the only folder this function creates is named after the
+    // archive. Without this the folder is pruned as empty and the archive reappears beside it in a
+    // fresh one, losing the placement.
+    inheritedGroupId = [...emptied].find(
+      (groupId) =>
+        groupId !== undefined &&
+        store.layerGroups.some((group) => group.id === groupId && group.name !== name),
+    );
     // The folder the old shape sat in goes with it when nothing is left in it, the same way the
     // control's own removal prunes one — otherwise the archive comes back beside an empty husk.
     const afterStale = useAppStore.getState();
     for (const groupId of emptied) {
-      if (!groupId) continue;
+      if (!groupId || groupId === inheritedGroupId) continue;
       if (afterStale.layers.some((layer) => layer.groupId === groupId)) continue;
       afterStale.removeLayerGroup(groupId);
     }
   }
   // Read back after the adds, so a source layer reported later joins the folder its siblings are in.
-  if (layers.length > 1 && added.length > 0) {
+  if (added.length > 0) {
     const state = useAppStore.getState();
     // A sibling's folder, if any sibling is still in one: a user who dragged them all out has said
     // this archive is not a folder any more. Where an id was reused, whatever was taken over counts
@@ -110,10 +121,11 @@ export function addPMTilesArchive(layers: readonly GeoLibreLayer[], name: string
     // First match wins, deliberately. A user who has split this archive's layers across folders has
     // no folder that is the right one, and picking the most populated would be a guess dressed up
     // as a rule — the layers are theirs to move, and this only decides where a *new* one lands.
-    const existing = state.layers.find((item) => ids.has(item.id) && item.groupId)?.groupId;
+    const existing =
+      state.layers.find((item) => ids.has(item.id) && item.groupId)?.groupId ?? inheritedGroupId;
     if (existing) {
       state.moveLayersToGroup(added, existing);
-    } else {
+    } else if (layers.length > 1) {
       state.addLayerGroup(name, added);
     }
   }
