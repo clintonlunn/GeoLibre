@@ -12,10 +12,12 @@ import math
 import os
 import pathlib
 import re
+import tempfile
 import time
 import urllib.parse
 import uuid
 import warnings
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 from urllib.error import URLError
@@ -25,7 +27,7 @@ import traitlets
 
 from . import authoring as _authoring
 from . import project as _project
-from ._server import app_port, register_local_file, serve_app
+from ._server import app_port, register_local_file, serve_app, unregister_local_file
 from .basemaps import resolve_basemap
 from .polyline import polyline_to_geojson
 
@@ -63,6 +65,25 @@ _EE_VECTOR_STYLE_KEYS = frozenset(
 # restkey is ``None``, which would put a non-string key in the feature
 # properties and break JSON serialization on the way to the widget.
 _CSV_RESTKEY = "_extra"
+
+
+def _remove_temporary_rasters(paths: list[pathlib.Path]) -> None:
+    """Delete GeoTIFFs materialized from in-memory xarray objects.
+
+    Args:
+        paths: Paths to remove. The list is cleared in place so the same
+            object can be shared with a ``weakref.finalize`` safety net.
+    """
+    for path in paths:
+        # Drop the static server's token as well: each materialization writes to
+        # a fresh temporary path, so the registry would otherwise keep an entry
+        # per call for the life of the kernel.
+        unregister_local_file(path)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:  # pragma: no cover - best-effort cleanup at exit
+            pass
+    paths.clear()
 
 
 def _read_local_vector(
@@ -383,7 +404,26 @@ class Map(anywidget.AnyWidget):
         # name to its registered callbacks.
         self._pending: dict[str, dict[str, Any]] = {}
         self._event_handlers: dict[str, list[Callable[[Any], None]]] = {}
+        # GeoTIFFs materialized from in-memory xarray objects must remain on
+        # disk while the widget is alive because the app reads them lazily via
+        # HTTP Range requests.
+        self._temporary_rasters: list[pathlib.Path] = []
+        # ``close()`` is easy to forget, so the same list is handed to a
+        # finalizer, which weakref runs when the Map is collected and, because
+        # ipywidgets keeps widgets referenced until then, at interpreter exit.
+        # ``close()`` clears the list in place rather than rebinding it, so this
+        # finalizer stays valid for anything materialized afterwards.
+        self._raster_cleanup = weakref.finalize(
+            self, _remove_temporary_rasters, self._temporary_rasters
+        )
         self.on_msg(self._on_custom_msg)
+
+    def close(self) -> None:
+        """Close the widget and remove rasters materialized from xarray data."""
+        try:
+            super().close()
+        finally:
+            _remove_temporary_rasters(getattr(self, "_temporary_rasters", []))
 
     @staticmethod
     def _running_on_colab() -> bool:
@@ -1869,32 +1909,173 @@ class Map(anywidget.AnyWidget):
 
     def add_raster(
         self,
-        url: str,
+        source: Any = None,
         name: str = "Raster",
         *,
+        url: str | os.PathLike[str] | None = None,
         bands: list[int] | None = None,
         colormap: str | None = None,
         rescale: list[list[float]] | None = None,
+        array_args: dict[str, Any] | None = None,
         **style: Any,
     ) -> str:
-        """Add a raster (COG / GeoTIFF) layer.
+        """Add a raster from a COG, GeoTIFF, or xarray object.
 
-        Alias of :meth:`add_cog` with a generic default name. Accepts a URL or a
-        kernel-side local GeoTIFF path (see :meth:`add_cog` for the local-file
-        caveats).
+        URLs and paths are passed to :meth:`add_cog`. An
+        ``xarray.DataArray`` or ``xarray.Dataset`` is first materialized as a
+        temporary GeoTIFF using rioxarray. Longitude/latitude dimensions imply
+        EPSG:4326; other dimension names require georeferencing through the
+        object's ``.rio`` accessor or ``array_args``.
+
+        The temporary GeoTIFF is removed by :meth:`close`, and, if that is never
+        called, when the ``Map`` is garbage collected or the interpreter exits
+        normally. A killed kernel leaves the file in the system temp directory.
 
         Args:
-            url: URL of the COG / GeoTIFF, or a local GeoTIFF path.
+            source: URL or path of a COG / GeoTIFF, or an
+                ``xarray.DataArray`` / ``xarray.Dataset``.
             name: Layer display name.
+            url: Deprecated alias of ``source``, kept because this method used
+                to name its first parameter ``url`` (as :meth:`add_cog` still
+                does). Passing it emits a ``DeprecationWarning``.
             bands: Optional 1-based band indices to render.
             colormap: Optional colormap name (single-band rendering).
             rescale: Optional ``[[min, max], ...]`` ranges per band.
+            array_args: Options used only for xarray inputs. ``variable``
+                selects one Dataset variable, ``isel`` slices extra dimensions,
+                and ``x_dim``, ``y_dim``, ``crs``, and ``nodata`` override the
+                corresponding spatial metadata. Remaining options are passed to
+                ``rio.to_raster``.
             **style: Style overrides.
 
         Returns:
             The id of the added layer.
         """
-        return self.add_cog(url, name, bands=bands, colormap=colormap, rescale=rescale, **style)
+        if url is not None:
+            if source is not None:
+                raise TypeError("add_raster() got both 'source' and its deprecated alias 'url'")
+            warnings.warn(
+                "add_raster(url=...) is deprecated; pass the raster as the first "
+                "positional argument or as source=...",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            source = url
+        if source is None:
+            raise TypeError("add_raster() missing required argument: 'source'")
+
+        raster_source = source
+        if not isinstance(source, (str, os.PathLike)):
+            raster_source = self._materialize_xarray(source, array_args)
+        elif array_args:
+            warnings.warn(
+                "array_args is ignored unless source is an xarray object",
+                UserWarning,
+                stacklevel=2,
+            )
+        return self.add_cog(
+            raster_source,
+            name,
+            bands=bands,
+            colormap=colormap,
+            rescale=rescale,
+            **style,
+        )
+
+    def _materialize_xarray(
+        self, source: Any, array_args: dict[str, Any] | None = None
+    ) -> pathlib.Path:
+        """Write an xarray DataArray or Dataset to a session-scoped COG."""
+        try:
+            import xarray as xr
+        except ImportError as exc:  # pragma: no cover - object normally implies install
+            raise ImportError(
+                "xarray support requires the 'raster' extra: pip install geolibre[raster]"
+            ) from exc
+
+        if not isinstance(source, (xr.DataArray, xr.Dataset)):
+            raise TypeError(
+                "source must be a COG/GeoTIFF URL or path, or an xarray DataArray/Dataset"
+            )
+        try:
+            import rioxarray  # noqa: F401 -- registers the .rio accessor
+        except ImportError as exc:
+            raise ImportError(
+                "xarray raster support requires rioxarray and rasterio; "
+                "install them with: pip install geolibre[raster]"
+            ) from exc
+
+        options = dict(array_args or {})
+        variable = options.pop("variable", None)
+        indexers = options.pop("isel", None)
+        x_dim = options.pop("x_dim", None)
+        y_dim = options.pop("y_dim", None)
+        crs = options.pop("crs", None)
+        nodata = options.pop("nodata", None)
+
+        data = source
+        if variable is not None:
+            if not isinstance(data, xr.Dataset):
+                raise ValueError("array_args['variable'] is only valid for an xarray Dataset")
+            if variable not in data.data_vars:
+                raise ValueError(f"Dataset has no data variable named {variable!r}")
+            data = data[variable]
+        elif isinstance(data, xr.Dataset) and not data.data_vars:
+            raise ValueError("Cannot visualize an xarray Dataset with no data variables")
+        if indexers is not None:
+            if not isinstance(indexers, Mapping):
+                raise TypeError(
+                    "array_args['isel'] must be a mapping of dimension names to indices"
+                )
+            data = data.isel(dict(indexers))
+
+        dims = set(data.dims)
+        x_dim = x_dim or next((d for d in ("x", "lon", "longitude") if d in dims), None)
+        y_dim = y_dim or next((d for d in ("y", "lat", "latitude") if d in dims), None)
+        if x_dim is None or y_dim is None:
+            raise ValueError(
+                "Could not identify x/y dimensions. Set array_args={'x_dim': ..., 'y_dim': ...}."
+            )
+        data = data.rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=False)
+        if crs is not None:
+            data = data.rio.write_crs(crs, inplace=False)
+        elif data.rio.crs is None:
+            if x_dim in {"lon", "longitude"} and y_dim in {"lat", "latitude"}:
+                data = data.rio.write_crs("EPSG:4326", inplace=False)
+            else:
+                raise ValueError(
+                    "The xarray object has no CRS. Set it with .rio.write_crs() or "
+                    "array_args={'crs': 'EPSG:...'} ."
+                )
+        if nodata is not None:
+            if isinstance(data, xr.Dataset):
+                # RasterDataset has no write_nodata method; nodata metadata
+                # belongs to each DataArray variable instead. Assign the
+                # results explicitly because Dataset.map() discards the
+                # per-variable _FillValue attributes written by rioxarray.
+                data = data.copy()
+                for variable_name in data.data_vars:
+                    data[variable_name] = data[variable_name].rio.write_nodata(
+                        nodata, inplace=False
+                    )
+                data = data.rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=False)
+            else:
+                data = data.rio.write_nodata(nodata, inplace=False)
+
+        handle, raw_path = tempfile.mkstemp(prefix="geolibre-xarray-", suffix=".tif")
+        os.close(handle)
+        path = pathlib.Path(raw_path)
+        try:
+            # The browser can range-read a COG directly. A plain GTiff makes
+            # the app warn and convert the full file client-side before it can
+            # display the layer.
+            options.setdefault("driver", "COG")
+            data.rio.to_raster(path, **options)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        self._temporary_rasters.append(path)
+        return path
 
     def add_wms(
         self,
