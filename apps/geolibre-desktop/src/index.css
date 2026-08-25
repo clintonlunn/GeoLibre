@@ -1163,6 +1163,7 @@ body,
  * buttons, the active-tool highlight, and the inline color/width inputs.
  */
 .geolibre-annotations-control {
+  --geolibre-annotations-cell-size: 29px;
   background-color: hsl(var(--background)) !important;
   border: 1px solid hsl(var(--border)) !important;
   border-radius: 4px;
@@ -1170,6 +1171,15 @@ body,
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.geolibre-annotations-control .geolibre-annotations-tools {
+  display: flex;
+  flex-direction: column;
+}
+
+.geolibre-annotations-control .geolibre-annotations-tools[hidden] {
+  display: none;
 }
 
 /* `display: flex !important` overrides MapLibre's `.maplibregl-ctrl button`
@@ -1182,10 +1192,10 @@ body,
   color: hsl(var(--foreground));
   cursor: pointer;
   display: flex !important;
-  height: 29px;
+  height: var(--geolibre-annotations-cell-size);
   justify-content: center;
   padding: 0;
-  width: 29px;
+  width: var(--geolibre-annotations-cell-size);
 }
 
 .geolibre-annotations-control button > svg {
@@ -1204,8 +1214,16 @@ body,
   color: hsl(var(--primary-foreground));
 }
 
+.geolibre-annotations-control .geolibre-annotations-collapse {
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.geolibre-annotations-control.is-collapsed .geolibre-annotations-collapse {
+  border-bottom: 0;
+}
+
 /* Separators between the icon buttons, tinted for the active theme. */
-.geolibre-annotations-control button + button,
+.geolibre-annotations-control .geolibre-annotations-tools button + button,
 .geolibre-annotations-control .geolibre-annotations-width,
 .geolibre-annotations-control .geolibre-annotations-color {
   border-top: 1px solid hsl(var(--border));
