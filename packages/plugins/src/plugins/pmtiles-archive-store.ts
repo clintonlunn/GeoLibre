@@ -92,19 +92,22 @@ export function addPMTilesArchive(layers: readonly GeoLibreLayer[], name: string
       emptied.add(stale.groupId);
       store.removeLayer(stale.id);
     }
-    // A folder the user made and filed this archive into, rather than the one added for it below.
-    // The old shape is about to be replaced, and the replacement belongs where the user put it —
-    // told apart by the name, since the only folder this function creates is named after the
-    // archive. Without this the folder is pruned as empty and the archive reappears beside it in a
-    // fresh one, losing the placement.
-    inheritedGroupId = [...emptied].find(
-      (groupId) =>
-        groupId !== undefined &&
-        store.layerGroups.some((group) => group.id === groupId && group.name !== name),
-    );
+    const afterStale = useAppStore.getState();
+    // The folder the old shape sat in, when the replacement belongs there rather than in a fresh
+    // one. Without this the placement is lost: the folder prunes as empty and the archive reappears
+    // beside it — or, where it survives, next to a second folder of the same name.
+    //
+    // Ours to take away only if this function would have made it *and* nothing else is left in it.
+    // Anything else is the user's arrangement, and the replacement goes back into it.
+    inheritedGroupId = [...emptied].find((groupId) => {
+      if (groupId === undefined) return false;
+      const group = afterStale.layerGroups.find((item) => item.id === groupId);
+      if (!group) return false;
+      if (afterStale.layers.some((layer) => layer.groupId === groupId)) return true;
+      return group.name !== name;
+    });
     // The folder the old shape sat in goes with it when nothing is left in it, the same way the
     // control's own removal prunes one — otherwise the archive comes back beside an empty husk.
-    const afterStale = useAppStore.getState();
     for (const groupId of emptied) {
       if (!groupId || groupId === inheritedGroupId) continue;
       if (afterStale.layers.some((layer) => layer.groupId === groupId)) continue;

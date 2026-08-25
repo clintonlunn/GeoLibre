@@ -662,6 +662,33 @@ describe("an archive the user has filed in a folder of their own", () => {
       sourceLayers,
     });
 
+  // The user's folder may happen to carry the archive's own name. Told apart by the name alone it
+  // reads as the one this function makes, and the replacement starts a second folder beside it.
+  it("rejoins a folder of its own name that the user keeps other layers in", () => {
+    addPMTilesArchive(shaped(["faults"]), "Faults");
+    const store = useAppStore.getState();
+    store.addLayerGroup("Faults", []);
+    const mine = useAppStore.getState().layerGroups.at(-1)!.id;
+    const source = useAppStore.getState().layers[0]!;
+    useAppStore.getState().addLayer({
+      ...source,
+      id: "a-layer-of-my-own",
+      groupId: undefined,
+      metadata: { ...source.metadata, sourceId: "mine", sourceKind: "geojson-file" },
+    });
+    useAppStore.getState().moveLayersToGroup(["asset-8", "a-layer-of-my-own"], mine);
+
+    addPMTilesArchive(shaped(["faults", "folds"]), "Faults");
+
+    const state = useAppStore.getState();
+    assert.equal(state.layerGroups.length, 1, "no second folder of the same name");
+    assert.deepEqual(
+      state.layers.filter((layer) => layer.id.startsWith("asset-8")).map((layer) => layer.groupId),
+      [mine, mine],
+      "the replacement went back where the user keeps it",
+    );
+  });
+
   it("stays in that folder when a later read changes its shape", () => {
     addPMTilesArchive(shaped(["faults"]), "Faults");
     const store = useAppStore.getState();
