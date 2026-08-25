@@ -5541,6 +5541,10 @@ function pmtilesLayerOptions(
   // A selection naming anything this archive lacks belongs to a different one, and so does the
   // checkbox list beside it — the user could not tick the rest back. None of it is trusted.
   const stale = controlDrew.some((sourceLayer) => !layerInfo.sourceLayers.includes(sourceLayer));
+  // Matched on the URL string exactly as the caller passed it, because the mark is claimed before
+  // the add and there is no archive id yet to key on. The control stores that string verbatim, and
+  // `tests/pmtiles-control-contract.test.ts` adds through a URL carrying a query string so a bump
+  // that starts rewriting it fails there rather than silently reinstating a stale tick selection.
   const sourceLayers =
     stale || programmaticPMTilesAdds.has(layerInfo.url)
       ? layerInfo.sourceLayers
@@ -5832,7 +5836,13 @@ export function pmtilesArchivesFullyRemoved(
   return [...gone];
 }
 
-/** Whether this layer came from the control: a STAC asset and a basemap extract share its shape. */
+/**
+ * Whether this layer came from the control: a STAC asset and a basemap extract share its shape.
+ *
+ * A project saved before archives carried `controlArchiveId` fails this, which costs it nothing:
+ * every caller gates on `controlOwnedArchives` as well, and that is session state — a reloaded
+ * layer is not the control's to remove whether or not it carries the mark.
+ */
 function isPMTilesControlLayer(layer: GeoLibreLayer): boolean {
   return (
     layer.type === "pmtiles" &&

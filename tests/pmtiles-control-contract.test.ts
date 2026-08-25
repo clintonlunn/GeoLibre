@@ -105,7 +105,7 @@ function vectorArchive(sourceLayers: string[]): Uint8Array {
 function serve(bytes: Uint8Array): typeof fetch {
   const real = globalThis.fetch;
   return (async (url, init) => {
-    if (!String(url).endsWith(".pmtiles")) {
+    if (!new URL(String(url), "https://x.test").pathname.endsWith(".pmtiles")) {
       // The components package initialises a wasm module through `fetch` when it loads, from an
       // inlined `data:` URL. Anything else would be a real request: refused rather than passed on,
       // so a bump that starts fetching from a CDN fails here instead of quietly needing a network.
@@ -304,7 +304,10 @@ describe("adding an archive by URL while the panel holds a stale tick", () => {
       (
         __getPMTilesControlForTests() as { _state: { selectedSourceLayers: string[] } }
       )._state.selectedSourceLayers = ["roads"];
-      await addPMTilesLayerFromUrl(app, "https://example.test/by-url-2.pmtiles");
+      // A query string, the shape a presigned URL takes: `programmaticPMTilesAdds` is keyed on this
+      // exact string, so a control that trimmed or rewrote it before echoing it back would let the
+      // stale tick above through and strand `buildings` outside the store.
+      await addPMTilesLayerFromUrl(app, "https://example.test/by-url-2.pmtiles?sig=abc%2F123");
 
       assert.deepEqual(
         useAppStore
