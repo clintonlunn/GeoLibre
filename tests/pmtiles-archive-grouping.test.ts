@@ -83,8 +83,12 @@ describe("adding an archive from anywhere", () => {
     );
   });
 
-  // The control discovers source layers as metadata arrives, and one source layer is named after
-  // the archive while several are named after each — so a second read can change the id scheme.
+  // The same archive can be read twice under one id — re-added after the panel was closed and
+  // reopened, which restarts the control's counter — and one source layer is named after the
+  // archive while several are named after each, so its shape decides the id scheme.
+  //
+  // The control emits `layeradd` once per add, so this is a *re-add*, never a second event for an
+  // add still in flight. Nothing here is progressive metadata discovery.
   it("replaces the archive when a later read finds more source layers", () => {
     const one = createPMTilesArchiveLayers({
       id: "asset-3",
@@ -614,8 +618,9 @@ describe("the folder an archive's source layers are added into", () => {
     );
   });
 
-  // The control discovers an archive's source layers as its metadata arrives, so a second event can
-  // report one the first did not. That layer belongs with its siblings, not in a folder of its own.
+  // A re-add of an archive already in the store can report a source layer the first read did not.
+  // That layer belongs with its siblings, not in a folder of its own. Defence in depth: the control
+  // emits `layeradd` once per add, so this arrives as a fresh add rather than a follow-up event.
   it("puts a source layer a later event reports into the folder that already exists", () => {
     const handle = createPMTilesLayerAddHandler();
     handle(addEvent(["roads", "water"]));
