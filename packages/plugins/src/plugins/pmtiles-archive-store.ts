@@ -106,6 +106,10 @@ export function addPMTilesArchive(layers: readonly GeoLibreLayer[], name: string
     // A sibling's folder, if any sibling is still in one: a user who dragged them all out has said
     // this archive is not a folder any more. Where an id was reused, whatever was taken over counts
     // as a sibling, so the two archives share a folder under whichever name got there first.
+    //
+    // First match wins, deliberately. A user who has split this archive's layers across folders has
+    // no folder that is the right one, and picking the most populated would be a guess dressed up
+    // as a rule — the layers are theirs to move, and this only decides where a *new* one lands.
     const existing = state.layers.find((item) => ids.has(item.id) && item.groupId)?.groupId;
     if (existing) {
       state.moveLayersToGroup(added, existing);
