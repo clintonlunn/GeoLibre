@@ -3715,9 +3715,16 @@ export function removeLayerFromMap(
   unregisterGeoJsonVtSource(layerId);
   // Free an in-memory PMTiles archive (an offline basemap extract) this layer
   // referenced; a no-op for remote pmtiles:// URLs.
+  //
+  // Refcounted the way the shared source above is: a split archive is several layers reading one
+  // set of bytes, so freeing them when the first child goes would leave its siblings resolving
+  // tiles against a protocol entry that no longer exists.
   if (layer?.type === "pmtiles") {
     const url = stringSource(layer.source.url) ?? layer.sourcePath;
-    if (typeof url === "string") unregisterPMTilesArchive(url);
+    const heldByASibling = getExternalSourceIds(layer).some(
+      (src) => stillInUse.has(src) || stillDrawn(src),
+    );
+    if (typeof url === "string" && !heldByASibling) unregisterPMTilesArchive(url);
   }
 }
 

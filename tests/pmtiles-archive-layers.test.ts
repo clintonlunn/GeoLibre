@@ -4,7 +4,12 @@ import {
   createPMTilesArchiveLayers,
   type PMTilesStoreLayerOptions,
 } from "../packages/map/src/pmtiles-layer";
-import { externalSourceIdsFor, removeLayerFromMap } from "../packages/map/src/layer-sync";
+import {
+  externalSourceIdsFor,
+  hasPMTilesArchive,
+  registerPMTilesArchive,
+  removeLayerFromMap,
+} from "../packages/map/src/layer-sync";
 import {
   blendModeForNativeLayer,
   resetLayerBlendModes,
@@ -409,5 +414,92 @@ describe("splitting an archive whose source layer names overlap", () => {
       "a-water-line",
       "a-water-circle",
     ]);
+  });
+});
+
+// An offline extract's bytes live in a registry keyed by URL, and every layer of a split archive
+// names the same URL. Freeing them when the first child goes leaves its siblings resolving tiles
+// against a protocol entry that is no longer there.
+describe("removing one layer of an archive whose bytes are held in memory", () => {
+  const offline = (): PMTilesStoreLayerOptions => ({
+    ...archive,
+    url: registerPMTilesArchive("split-extract.pmtiles", new Uint8Array([1, 2, 3])),
+    sourceLayerColors: undefined,
+  });
+
+  it("keeps the archive registered while a sibling still draws from it", () => {
+    const layers = createPMTilesArchiveLayers(offline());
+    const key = layers[0]!.sourcePath!;
+    const map = {
+      getLayer: () => undefined,
+      getSource: (id: string) => ({ id }),
+      removeLayer: () => {},
+      removeSource: () => {},
+      getLayersOrder: () => [],
+    };
+
+    removeLayerFromMap(
+      map as never,
+      layers[0]!.id,
+      layers[0],
+      externalSourceIdsFor(layers.slice(1)),
+    );
+
+    assert.equal(hasPMTilesArchive(key), true, "its siblings still read these bytes");
+  });
+
+  it("frees the archive once the last layer of it goes", () => {
+    const layers = createPMTilesArchiveLayers(offline());
+    const key = layers[0]!.sourcePath!;
+    const map = {
+      getLayer: () => undefined,
+      getSource: (id: string) => ({ id }),
+      removeLayer: () => {},
+      removeSource: () => {},
+      getLayersOrder: () => [],
+    };
+
+    for (const [index, layer] of layers.entries()) {
+      removeLayerFromMap(
+        map as never,
+        layer.id,
+        layer,
+        externalSourceIdsFor(layers.slice(index + 1)),
+      );
+    }
+
+    assert.equal(hasPMTilesArchive(key), false, "nothing is left holding them");
+  });
+});
+
+// Nothing points an archive at a source other than its own id today, but the option exists and the
+// split path used to ignore it — every part would have named a source nothing on the map answers to.
+describe("splitting an archive that draws from someone else's source", () => {
+  it("gives every part that source, and the ids that go with it", () => {
+    const layers = createPMTilesArchiveLayers({
+      ...archive,
+      id: "asset-9",
+      sourceId: "shared-archive",
+      sourceLayerColors: undefined,
+      sourceLayers: ["roads", "water"],
+      nativeLayerIds: ["fill", "line", "circle"].map((kind) => `shared-archive-roads-${kind}`),
+    });
+
+    assert.deepEqual(
+      layers.map((layer) => [layer.id, layer.source.sourceId, layer.metadata.nativeLayerIds]),
+      [
+        [
+          "asset-9-roads",
+          "shared-archive",
+          ["shared-archive-roads-fill", "shared-archive-roads-line", "shared-archive-roads-circle"],
+        ],
+        [
+          "asset-9-water",
+          "shared-archive",
+          ["shared-archive-water-fill", "shared-archive-water-line", "shared-archive-water-circle"],
+        ],
+      ],
+      "the control's ids for `roads` are kept, and `water` derives its own against the same source",
+    );
   });
 });

@@ -183,6 +183,11 @@ export function createPMTilesArchiveLayers(options: PMTilesStoreLayerOptions): G
     // Raster tiles never split, so the id math below means nothing for them.
     return [createPMTilesStoreLayer(options)];
   }
+  // The source every part draws from, and so the prefix of every id naming one. A caller that
+  // points an archive at someone else's source says so here; nothing does today, and forcing
+  // `options.id` would have quietly ignored it.
+  const archiveSourceId = options.sourceId ?? options.id;
+
   const parts = new Map<string, string>();
   for (const sourceLayer of options.sourceLayers) {
     const id = `${options.id}-${encodeVectorTileLayerPart(sourceLayer)}`;
@@ -211,7 +216,7 @@ export function createPMTilesArchiveLayers(options: PMTilesStoreLayerOptions): G
     // Built from `parts` like the split path, so both arms agree on what is drawn and which ids go
     // with it — a dropped collider's would be styled, hidden and removed on this layer's behalf.
     const drawn = [...parts.values()];
-    const own = pmtilesIdsForSourceLayers(options.nativeLayerIds ?? [], options.id, drawn);
+    const own = pmtilesIdsForSourceLayers(options.nativeLayerIds ?? [], archiveSourceId, drawn);
     return [
       createPMTilesStoreLayer({
         ...options,
@@ -226,7 +231,9 @@ export function createPMTilesArchiveLayers(options: PMTilesStoreLayerOptions): G
   return [...parts].map(([id, sourceLayer]) => {
     // Whichever of the archive's ids draw this source layer: deriving a fresh set would put a
     // second trio over the control's. Empty means nobody has drawn it, so ids are derived below.
-    const own = pmtilesIdsForSourceLayers(options.nativeLayerIds ?? [], options.id, [sourceLayer]);
+    const own = pmtilesIdsForSourceLayers(options.nativeLayerIds ?? [], archiveSourceId, [
+      sourceLayer,
+    ]);
     return createPMTilesStoreLayer({
       ...options,
       id,
@@ -234,7 +241,7 @@ export function createPMTilesArchiveLayers(options: PMTilesStoreLayerOptions): G
       sourceLayers: [sourceLayer],
       // The archive's source, and so the archive's ids: a layer deriving its own would name ids
       // nothing on the map answers to.
-      sourceId: options.id,
+      sourceId: archiveSourceId,
       nativeLayerIds: own.length > 0 ? own : undefined,
     });
   });
