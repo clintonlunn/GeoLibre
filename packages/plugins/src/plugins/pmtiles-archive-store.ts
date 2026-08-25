@@ -5,6 +5,22 @@
 
 import { type GeoLibreLayer, useAppStore } from "@geolibre/core";
 
+/** Archive ids already reported as reused, so a re-add does not warn about them again. */
+const reportedSourceIdClashes = new Set<string>();
+
+/** @internal Exported only so one test's clash does not silence another's. */
+export function __resetReportedPMTilesSourceIdClashesForTests(): void {
+  reportedSourceIdClashes.clear();
+}
+
+/** Whether this clash is being reported for the first time. */
+function claimPMTilesSourceIdClash(archiveId: string, url: string): boolean {
+  const key = JSON.stringify([archiveId, url]);
+  if (reportedSourceIdClashes.has(key)) return false;
+  reportedSourceIdClashes.add(key);
+  return true;
+}
+
 /**
  * Add an archive's layers, or update them where they are already on the map.
  *
@@ -20,33 +36,58 @@ export function addPMTilesArchive(layers: readonly GeoLibreLayer[], name: string
   const added: string[] = [];
   for (const layer of layers) {
     if (known.has(layer.id)) {
+      // Re-pointed, not rebuilt: the user's styling, opacity and visibility stand, and `metadata`
+      // is merged so a plugin's own keys survive. A re-add is reached by closing the panel and
+      // adding the archive again — not a reason to undo what was done to the layer since.
+      //
+      // The layer may belong to a *different* archive whose id the control reused, in which case
+      // this takes it over silently, keeping the old name, folder and styling. A changed URL is not
+      // evidence of a different archive (a presigned URL re-signed), so warning here would cry wolf.
+      const before = store.layers.find((item) => item.id === layer.id);
       store.updateLayer(layer.id, {
-        metadata: layer.metadata,
-        opacity: layer.opacity,
+        metadata: { ...before?.metadata, ...layer.metadata },
         source: layer.source,
-        style: layer.style,
-        visible: layer.visible,
+        // Must follow the archive: it is what the sweep below matches on, and a stale one gets the
+        // layer swept away as some other archive's old shape.
+        sourcePath: layer.sourcePath,
       });
       continue;
     }
     store.addLayer(layer);
     added.push(layer.id);
   }
-  // Only after the adds: the archive must never be momentarily layerless, or the store subscriber
-  // reads it as gone, tells the control so, and hands back the ownership the new layers need.
+  // The old shape goes, or it stays on the map drawing the whole archive under the layers that
+  // replaced it. After the adds, so the archive is never momentarily layerless — the store
+  // subscriber reads that as gone and hands its ownership back to the control.
   //
-  // A later read can report a different set of source layers, and one source layer is named after
-  // the archive itself while several are named after each — so the same archive can arrive under a
-  // different id scheme. What it used to be goes, or it stays on the map drawing the whole archive
-  // underneath the layers that replaced it.
+  // Matched on the URL as well as the id, because archive ids are not unique over a session: the
+  // control's counter restarts whenever the panel is reopened. Without it, a new archive would
+  // delete an unrelated one that happens to hold the same `pmtiles-source-N`. The cost is two
+  // archives on one `metadata.sourceId`, and so one MapLibre source — hence the warning below.
+  //
+  // A departing layer can name native layers a survivor also names, both drawing from that one
+  // source. Safe only because a sync pass runs every removal before any add
+  // (`MapController.syncLayers`, `createLayerSync`); move removals after adds and this breaks.
   const archiveId = layers[0]?.metadata.sourceId;
+  const archiveUrl = layers[0]?.sourcePath;
   if (typeof archiveId === "string") {
     const emptied = new Set<string | undefined>();
+    // The pre-add snapshot, so `removeLayer` can replace the array while this walks it.
     for (const stale of store.layers) {
-      // `metadata.sourceId` is a generic key other layer kinds set too, so the type is checked
-      // rather than trusting an id match to mean "a layer of this archive".
+      // `metadata.sourceId` is a key every layer kind sets, so the type is checked as well.
       if (stale.type !== "pmtiles" || stale.metadata.sourceId !== archiveId) continue;
+      // Before the URL check: a layer being taken over still shows its old URL here.
       if (ids.has(stale.id)) continue;
+      if (stale.sourcePath !== archiveUrl) {
+        // Nothing else can see this, and it looks like a rendering fault: one source between two
+        // archives means one of them draws nothing.
+        if (claimPMTilesSourceIdClash(archiveId, archiveUrl ?? "")) {
+          console.warn(
+            `PMTiles archive "${archiveId}" is already "${stale.sourcePath}"; "${archiveUrl}" reuses the id and one of them will not draw.`,
+          );
+        }
+        continue;
+      }
       emptied.add(stale.groupId);
       store.removeLayer(stale.id);
     }
@@ -62,9 +103,9 @@ export function addPMTilesArchive(layers: readonly GeoLibreLayer[], name: string
   // Read back after the adds, so a source layer reported later joins the folder its siblings are in.
   if (layers.length > 1 && added.length > 0) {
     const state = useAppStore.getState();
-    // A sibling's folder, when one is still in a folder. A user who has dragged every sibling out
-    // has said this archive is not a folder any more, so the layer being added now starts a fresh
-    // one rather than being pulled back into the folder they emptied.
+    // A sibling's folder, if any sibling is still in one: a user who dragged them all out has said
+    // this archive is not a folder any more. Where an id was reused, whatever was taken over counts
+    // as a sibling, so the two archives share a folder under whichever name got there first.
     const existing = state.layers.find((item) => ids.has(item.id) && item.groupId)?.groupId;
     if (existing) {
       state.moveLayersToGroup(added, existing);

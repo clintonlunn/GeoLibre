@@ -12,7 +12,8 @@ function controlLayer(patch: Partial<PMTilesLayerInfo> = {}): PMTilesLayerInfo {
     name: "",
     tileType: "vector",
     sourceLayers: ["units"],
-    layerIds: ["control-fill", "control-line"],
+    // Built the way the real control builds them: `${sourceId}-${rawName}-${kind}` for what it drew.
+    layerIds: ["pmtiles-1-units-fill", "pmtiles-1-units-line", "pmtiles-1-units-circle"],
     opacity: 0.8,
     pickable: true,
     ...patch,
@@ -24,7 +25,8 @@ function controlLayer(patch: Partial<PMTilesLayerInfo> = {}): PMTilesLayerInfo {
  * into a layer each, which `pmtiles-archive-layers.test.ts` covers.
  */
 function pmtilesStoreLayer(id: string, info: PMTilesLayerInfo) {
-  const layers = pmtilesStoreLayers(id, info);
+  // Nothing ticked, so the whole archive: what the panel reports before a user touches it.
+  const layers = pmtilesStoreLayers(id, info, []);
   assert.equal(layers.length, 1);
   return layers[0]!;
 }
@@ -34,8 +36,12 @@ describe("the store layer the PMTiles control's layeradd produces", () => {
     const layer = pmtilesStoreLayer("pmtiles-1", controlLayer());
 
     assert.equal(isPlaceholderLayer(layer), false);
-    // The control made these; deriving ids here would name layers that do not exist.
-    assert.deepEqual(layer.metadata.nativeLayerIds, ["control-fill", "control-line"]);
+    // The control made these; deriving a second set here would draw over the layers it added.
+    assert.deepEqual(layer.metadata.nativeLayerIds, [
+      "pmtiles-1-units-fill",
+      "pmtiles-1-units-line",
+      "pmtiles-1-units-circle",
+    ]);
     assert.equal(layer.opacity, 0.8);
   });
 

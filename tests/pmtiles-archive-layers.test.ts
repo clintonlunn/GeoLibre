@@ -59,18 +59,72 @@ describe("expanding an archive into a layer per source layer", () => {
   // archive's metadata can repeat a name outright. Either way a second layer would take the first
   // one's id, and the store would hold two layers answering to it.
   it("gives two source layers that would share an id a single layer", () => {
-    const layers = createPMTilesArchiveLayers({
-      ...archive,
-      sourceLayerColors: undefined,
-      sourceLayers: ["a/b", "a_2Fb", "roads"],
-    });
+    const warn = console.warn;
+    console.warn = () => {};
+    let layers;
+    try {
+      layers = createPMTilesArchiveLayers({
+        ...archive,
+        sourceLayerColors: undefined,
+        sourceLayers: ["a/b", "a_2Fb", "roads"],
+      });
+    } finally {
+      console.warn = warn;
+    }
 
     assert.equal(new Set(layers.map((layer) => layer.id)).size, layers.length, "no id twice");
     assert.deepEqual(
       layers.map((layer) => layer.name),
-      ["a/b", "roads"],
-      "the colliding second name is dropped, the first stands",
+      ["a_2Fb", "roads"],
+      "the id goes to the name that is its own id, not to whichever was read first",
     );
+  });
+
+  // Order decides which name reaches the id first, but not which keeps it: whichever encodes to
+  // itself is the one the control's raw ids name, so drawing the other in its place would put a
+  // source layer on the map that nothing ticked. Where neither name is its own id the winner is
+  // still first-wins, which nothing on the map depends on.
+  it("gives the shared id to whichever name is its own id, however they are ordered", () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    const drawn = (sourceLayers: string[]) =>
+      createPMTilesArchiveLayers({
+        ...archive,
+        sourceLayerColors: undefined,
+        sourceLayers,
+      }).map((layer) => layer.name);
+    try {
+      assert.deepEqual(drawn(["a_2Fb", "a/b", "roads"]), ["a_2Fb", "roads"]);
+      assert.deepEqual(drawn(["a/b", "a_2Fb", "roads"]), ["a_2Fb", "roads"]);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  // The collider is dropped, so the ids that drew it are not this layer's to hide, style or remove.
+  it("does not carry a dropped collider's ids into the layer that kept the id", () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    let layers;
+    try {
+      layers = createPMTilesArchiveLayers({
+        ...archive,
+        sourceLayerColors: undefined,
+        sourceLayers: ["a/b", "a_2Fb"],
+        nativeLayerIds: ["a/b", "a_2Fb"].flatMap((name) =>
+          ["fill", "line", "circle"].map((kind) => `grid-${name}-${kind}`),
+        ),
+      });
+    } finally {
+      console.warn = warn;
+    }
+
+    assert.equal(layers.length, 1);
+    assert.deepEqual(layers[0]!.metadata.nativeLayerIds, [
+      "grid-a_2Fb-fill",
+      "grid-a_2Fb-line",
+      "grid-a_2Fb-circle",
+    ]);
   });
 
   it("keeps a repeated source layer to one layer", () => {
@@ -91,14 +145,17 @@ describe("expanding an archive into a layer per source layer", () => {
     const warn = console.warn;
     console.warn = (message: unknown) => warnings.push(String(message));
     try {
+      // Its own archive URL, so the two adds below are two archives rather than one read twice.
       createPMTilesArchiveLayers({
         ...archive,
+        url: "https://example.org/collides.pmtiles",
         sourceLayerColors: undefined,
         sourceLayers: ["a/b", "a_2Fb", "roads"],
       });
       // A repeat of the same name is not a collision — nothing is lost, so nothing is said.
       createPMTilesArchiveLayers({
         ...archive,
+        url: "https://example.org/repeats.pmtiles",
         sourceLayerColors: undefined,
         sourceLayers: ["roads", "roads", "water"],
       });
@@ -107,7 +164,56 @@ describe("expanding an archive into a layer per source layer", () => {
     }
 
     assert.equal(warnings.length, 1, "one collision, one warning");
-    assert.match(warnings[0]!, /a_2Fb/);
+    assert.match(warnings[0]!, /"a\/b" collides with "a_2Fb"/);
+  });
+
+  // A control re-reports its source layers as an archive's metadata arrives, so the same collision
+  // would otherwise be logged on every read.
+  it("says it once, however often the archive is read", () => {
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: unknown) => warnings.push(String(message));
+    try {
+      for (let read = 0; read < 3; read += 1) {
+        createPMTilesArchiveLayers({
+          ...archive,
+          url: "https://example.org/read-again.pmtiles",
+          sourceLayerColors: undefined,
+          sourceLayers: ["a/b", "a_2Fb", "roads"],
+        });
+      }
+    } finally {
+      console.warn = warn;
+    }
+
+    assert.equal(warnings.length, 1, "three reads, one warning");
+  });
+
+  // Archive ids come from a counter the control resets when it is rebuilt, so `pmtiles-source-0`
+  // names one archive in this project and a different one in the next. Keyed by id, the second
+  // would lose a source layer with nothing said about it.
+  it("says it again for a different archive that reuses the id", () => {
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: unknown) => warnings.push(String(message));
+    try {
+      for (const url of [
+        "https://example.org/first.pmtiles",
+        "https://example.org/second.pmtiles",
+      ]) {
+        createPMTilesArchiveLayers({
+          ...archive,
+          id: "pmtiles-source-0",
+          url,
+          sourceLayerColors: undefined,
+          sourceLayers: ["a/b", "a_2Fb", "roads"],
+        });
+      }
+    } finally {
+      console.warn = warn;
+    }
+
+    assert.equal(warnings.length, 2, "two archives, two warnings");
   });
 
   it("says nothing about a raster archive, which never splits", () => {
@@ -117,6 +223,9 @@ describe("expanding an archive into a layer per source layer", () => {
     try {
       createPMTilesArchiveLayers({
         ...archive,
+        // Its own URL, so the silence is the raster early return and not a collision an earlier
+        // test already reported for this pair.
+        url: "https://example.org/raster.pmtiles",
         tileType: "raster",
         sourceLayerColors: undefined,
         sourceLayers: ["a/b", "a_2Fb"],

@@ -11,6 +11,7 @@ import {
 } from "@geolibre/core";
 import {
   createPMTilesArchiveLayers,
+  pmtilesIdsForSourceLayers,
   type PMTilesStoreLayerOptions,
 } from "@geolibre/map/pmtiles-layer";
 import { addPMTilesArchive } from "./pmtiles-archive-store";
@@ -1744,6 +1745,30 @@ export function openPMTilesLayerPanel(app: GeoLibreAppAPI): void {
 }
 
 /**
+ * PMTiles archives being added by URL rather than through the panel, counted per URL because two
+ * adds of one URL can overlap.
+ *
+ * The control keeps one tick selection for the whole panel and `addLayer(url)` does not reset it,
+ * so these adds — Add Data, Source Cooperative, Hugging Face, none of which shows a tick UI — would
+ * otherwise inherit whatever was last ticked for a different archive and strand the rest of this
+ * one outside the store. Marked here, they take the whole archive.
+ */
+const programmaticPMTilesAdds = new Map<string, number>();
+
+/** Mark a programmatic add in flight, returning a disposer for its `finally`. */
+function beginProgrammaticPMTilesAdd(url: string): () => void {
+  programmaticPMTilesAdds.set(url, (programmaticPMTilesAdds.get(url) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const remaining = (programmaticPMTilesAdds.get(url) ?? 1) - 1;
+    if (remaining > 0) programmaticPMTilesAdds.set(url, remaining);
+    else programmaticPMTilesAdds.delete(url);
+  };
+}
+
+/**
  * Adds a remote PMTiles archive through the PMTiles control, without opening
  * its panel.
  *
@@ -1808,9 +1833,11 @@ export async function addPMTilesLayerFromUrl(
   };
   map?.on("movestart", onMoveStart);
   map?.on("moveend", onMoveEnd);
+  const endAdd = beginProgrammaticPMTilesAdd(url);
   try {
     await pmtilesControl.addLayer(url);
   } finally {
+    endAdd();
     // Preserve a host user's camera interaction that happened while the archive
     // header was loading, rather than restoring the older pre-load position.
     if (userMoving) camera = readCamera();
@@ -3996,6 +4023,10 @@ function createPMTilesControl(
       state.layers,
       controlOwnedArchives,
     )) {
+      // Released here, not in the remove handler: a Layers-panel delete takes the archive's last
+      // layer, so the control's echoed `layerremove` has nothing left to attribute it to and the
+      // claim would outlive the archive, onto whatever reuses `pmtiles-source-N`.
+      controlOwnedArchives.delete(archiveId);
       pmtilesControl?.removeLayer(archiveId);
     }
   });
@@ -4371,7 +4402,10 @@ function teardownGeoTiffRasterOverlay(app: GeoLibreAppAPI): void {
 export function teardownPMTilesControl(app: GeoLibreAppAPI): void {
   pmtilesStoreUnsubscribe?.();
   pmtilesStoreUnsubscribe = null;
-  // Claims belong to the control instance: a reopened panel holds nothing.
+  // Claims belong to the control instance: a reopened panel holds nothing. Dropped *before* the
+  // control is removed, because `onRemove` clears every layer it drew and emits a `layerremove`
+  // naming no archive while its handlers are still attached — claims held that late read it as the
+  // user deleting them all. Released first it means only that the map lost them, redrawn next sync.
   controlOwnedArchives.clear();
   if (pmtilesControl && pmtilesControlMounted) {
     app.removeMapControl(pmtilesControl);
@@ -4804,9 +4838,30 @@ function createZarrLayerAddHandler(): ZarrLayerEventHandler {
  */
 const controlOwnedArchives = new Set<string>();
 
-/** @internal Exported only so ownership can be reset between tests. */
-export function __resetPMTilesControlOwnershipForTests(): void {
+/** @internal Exported only so a test starts with no control, no claims and no add in flight. */
+export function __resetPMTilesControlForTests(): void {
   controlOwnedArchives.clear();
+  programmaticPMTilesAdds.clear();
+  pmtilesStoreUnsubscribe?.();
+  pmtilesStoreUnsubscribe = null;
+  pmtilesControl = null;
+  pmtilesControlMounted = false;
+}
+
+/** @internal Exported only so the URL-add path's effect on the tick filter can be unit-tested. */
+export function __beginProgrammaticPMTilesAddForTests(url: string): () => void {
+  return beginProgrammaticPMTilesAdd(url);
+}
+
+/** @internal Exported only so a test can drive the panel state a real control would hold. */
+export function __getPMTilesControlForTests(): unknown {
+  return pmtilesControl;
+}
+
+/** @internal Exported only so teardown can be unit-tested with a control mounted. */
+export function __mountPMTilesControlForTests(control: unknown): void {
+  pmtilesControl = control as typeof pmtilesControl;
+  pmtilesControlMounted = true;
 }
 
 /** @internal Exported only so the archive's removal can be unit-tested. */
@@ -4851,7 +4906,9 @@ export function createPMTilesLayerAddHandler(): PMTilesLayerEventHandler {
     if (!layerInfo) return;
 
     addPMTilesArchive(
-      pmtilesStoreLayers(event.layerId, layerInfo),
+      // The panel's tick selection, read from the state the control hands every handler rather than
+      // inferred from the ids it drew, which spell the name raw where this package encodes it.
+      pmtilesStoreLayers(event.layerId, layerInfo, event.state.selectedSourceLayers),
       pmtilesArchiveName(event.layerId, layerInfo),
     );
     controlOwnedArchives.add(event.layerId);
@@ -5451,12 +5508,20 @@ function createGeoTiffRasterStoreLayer(state: GeoTiffRasterLayerState): GeoLibre
 }
 
 /** @internal The layers a control-reported archive becomes. */
-export function pmtilesStoreLayers(id: string, layerInfo: PMTilesLayerInfo): GeoLibreLayer[] {
-  return createPMTilesArchiveLayers(pmtilesLayerOptions(id, layerInfo)).map((layer) => ({
-    ...layer,
-    // What the control knows this archive by. A STAC asset builds the same shape without one.
-    metadata: { ...layer.metadata, controlArchiveId: id },
-  }));
+export function pmtilesStoreLayers(
+  id: string,
+  layerInfo: PMTilesLayerInfo,
+  // Required, not defaulted: a caller that stopped passing it would silently go back to taking the
+  // whole archive whatever the panel has ticked, which is the behaviour this argument exists to fix.
+  selectedSourceLayers: readonly string[],
+): GeoLibreLayer[] {
+  return createPMTilesArchiveLayers(pmtilesLayerOptions(id, layerInfo, selectedSourceLayers)).map(
+    (layer) => ({
+      ...layer,
+      // What the control knows this archive by. A STAC asset builds the same shape without one.
+      metadata: { ...layer.metadata, controlArchiveId: id },
+    }),
+  );
 }
 
 /** What an archive is called: the control's own name, or one read off its URL. */
@@ -5464,20 +5529,41 @@ function pmtilesArchiveName(id: string, layerInfo: PMTilesLayerInfo): string {
   return layerInfo.name || layerNameFromUrl(layerInfo.url, id);
 }
 
-function pmtilesLayerOptions(id: string, layerInfo: PMTilesLayerInfo): PMTilesStoreLayerOptions {
+function pmtilesLayerOptions(
+  id: string,
+  layerInfo: PMTilesLayerInfo,
+  selectedSourceLayers: readonly string[],
+): PMTilesStoreLayerOptions {
+  // What the control drew: the panel's ticked source layers, or the whole archive when none are
+  // ticked. A stale tick can name source layers this archive does not even have.
+  const controlDrew =
+    selectedSourceLayers.length > 0 ? selectedSourceLayers : layerInfo.sourceLayers;
+  // A selection naming anything this archive lacks belongs to a different one, and so does the
+  // checkbox list beside it — the user could not tick the rest back. None of it is trusted.
+  const stale = controlDrew.some((sourceLayer) => !layerInfo.sourceLayers.includes(sourceLayer));
+  const sourceLayers =
+    stale || programmaticPMTilesAdds.has(layerInfo.url)
+      ? layerInfo.sourceLayers
+      : layerInfo.sourceLayers.filter((sourceLayer) => controlDrew.includes(sourceLayer));
+  // The control made these layers, so its ids stand rather than derived ones, which would draw a
+  // second trio over them. Only ids naming what the store holds are kept — the rest would be styled
+  // and removed in place of real layers. With no `vector_layers` there is nothing to derive at all,
+  // so the control's stand whatever they name or the layer renders as a placeholder.
+  const named = pmtilesIdsForSourceLayers(layerInfo.layerIds, id, sourceLayers);
+  // Ids left out name control-drawn layers no store layer owns; closing the panel or deleting the
+  // archive clears them, the control removing them by its own full `layerIds`.
   return {
     id,
     name: pmtilesArchiveName(id, layerInfo),
     url: layerInfo.url,
     // The control also reports "unknown", which it and the map both draw as vector tiles.
     tileType: layerInfo.tileType === "raster" ? "raster" : "vector",
-    sourceLayers: layerInfo.sourceLayers,
+    sourceLayers,
     opacity: layerInfo.opacity,
     style: { fillOpacity: layerInfo.tileType === "raster" ? 0.6 : 1 },
     pickable: layerInfo.pickable,
-    // The control created these MapLibre layers itself, so its ids stand rather than derived ones —
-    // for an archive that stays one layer. A split one re-derives them, scoped to the archive.
-    nativeLayerIds: layerInfo.layerIds,
+    nativeLayerIds:
+      sourceLayers.length === 0 ? layerInfo.layerIds : named.length > 0 ? named : undefined,
     ...(layerInfo.sourceLayerColors ? { sourceLayerColors: layerInfo.sourceLayerColors } : {}),
   };
 }

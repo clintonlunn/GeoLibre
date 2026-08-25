@@ -17,6 +17,8 @@ import {
 import {
   normalizePMTilesUrl,
   PMTILES_PROTOCOL,
+  pmtilesControlLayerId,
+  pmtilesIdNamesSourceLayer,
   pmtilesLayerKinds,
   pmtilesVectorLayerId,
 } from "./pmtiles-layer";
@@ -917,18 +919,9 @@ function ensurePMTilesExternalLayer(
   }
 
   for (const sourceLayer of sourceLayers) {
-    const fillId = getPMTilesNativeLayerId(
-      nativeLayerIds,
-      pmtilesVectorLayerId(sourceId, sourceLayer, "fill"),
-    );
-    const lineId = getPMTilesNativeLayerId(
-      nativeLayerIds,
-      pmtilesVectorLayerId(sourceId, sourceLayer, "line"),
-    );
-    const circleId = getPMTilesNativeLayerId(
-      nativeLayerIds,
-      pmtilesVectorLayerId(sourceId, sourceLayer, "circle"),
-    );
+    const fillId = getPMTilesNativeLayerId(nativeLayerIds, sourceId, sourceLayer, "fill");
+    const lineId = getPMTilesNativeLayerId(nativeLayerIds, sourceId, sourceLayer, "line");
+    const circleId = getPMTilesNativeLayerId(nativeLayerIds, sourceId, sourceLayer, "circle");
 
     ensureLayer(
       map,
@@ -1121,20 +1114,10 @@ function getPMTilesRenderableSourceLayers(
 ): string[] {
   const sourceLayers = getPMTilesSourceLayers(layer);
   const savedSourceLayers = sourceLayers.filter((sourceLayer) =>
-    hasPMTilesNativeSourceLayer(nativeLayerIds, sourceId, sourceLayer),
+    pmtilesIdNamesSourceLayer(nativeLayerIds, sourceId, sourceLayer),
   );
 
   return savedSourceLayers.length > 0 ? savedSourceLayers : sourceLayers;
-}
-
-function hasPMTilesNativeSourceLayer(
-  nativeLayerIds: string[],
-  sourceId: string,
-  sourceLayer: string,
-): boolean {
-  return pmtilesLayerKinds.some((kind) =>
-    nativeLayerIds.includes(pmtilesVectorLayerId(sourceId, sourceLayer, kind)),
-  );
 }
 
 function getPMTilesSourceLayers(layer: GeoLibreLayer): string[] {
@@ -1147,8 +1130,20 @@ function getPMTilesSourceLayers(layer: GeoLibreLayer): string[] {
     : [];
 }
 
-function getPMTilesNativeLayerId(nativeLayerIds: string[], fallbackId: string): string {
-  return nativeLayerIds.find((nativeLayerId) => nativeLayerId === fallbackId) ?? fallbackId;
+/**
+ * The id this source layer is already drawn under, or the one to draw it under. Both schemes are
+ * consulted — see `pmtilesControlLayerId` — or a control-added layer gets a second set over it.
+ */
+function getPMTilesNativeLayerId(
+  nativeLayerIds: string[],
+  sourceId: string,
+  sourceLayer: string,
+  kind: (typeof pmtilesLayerKinds)[number],
+): string {
+  const encoded = pmtilesVectorLayerId(sourceId, sourceLayer, kind);
+  if (nativeLayerIds.includes(encoded)) return encoded;
+  const raw = pmtilesControlLayerId(sourceId, sourceLayer, kind);
+  return nativeLayerIds.includes(raw) ? raw : encoded;
 }
 
 function isWaybackExternalRasterLayer(layer: GeoLibreLayer): boolean {
