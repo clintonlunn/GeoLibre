@@ -86,6 +86,24 @@ color checks). The cast hides any contract change from the compiler, so run the
 frontend suite — the "enforces an expected result type" test in
 `tests/expressions.test.ts` fails if the shape stops being honored.
 
+`SPEC_DEFAULT_COLOR` (`packages/map/src/mapbox-style-import.ts`) mirrors the
+spec's `default` for `fill-color`, `line-color` and `circle-color` — `#000000`
+for all three — which is the colour a stacked class layer naming none is
+imported as.
+It is hard-coded rather than read from the spec because `@geolibre/map` is a
+published package and does not depend on it (only `packages/core` does). The
+frontend suite guards both directions: a test in
+`tests/mapbox-style-import.test.ts` asserts the spec still says
+`SPEC_DEFAULT_COLOR`, and the behavioural tests beside it assert an imported
+colourless class renders that colour, so a change to either side fails.
+
+`COLOR_OVERRIDING_PAINT` in the same file mirrors the other half of that
+lookup: the paint properties that draw the feature themselves, so that the
+colour default does not apply. The spec encodes it as `line-color`'s
+`requires: [{ "!": "line-pattern" }]`, which the same test asserts; `fill-pattern`
+and `line-gradient` are listed on the same grounds. A class using one is not
+imported as black — it declines the stack.
+
 ### `maplibre-gl-components` (`packages/plugins/package.json`)
 
 - **`MAP_PANEL_SELECTOR`**

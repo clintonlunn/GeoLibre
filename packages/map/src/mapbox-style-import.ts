@@ -365,6 +365,21 @@ function isLegacyLayerFilter(filter: unknown[]): boolean {
 }
 
 /**
+ * The style spec's `default` for `fill-color`, `line-color` and `circle-color`, all three `#000000`.
+ * Hard-coded because `@geolibre/map` does not depend on the spec; guarded against it by a test.
+ */
+export const SPEC_DEFAULT_COLOR = "#000000";
+
+/**
+ * Paint properties that draw the feature themselves, leaving the colour unpainted. The spec says so
+ * for `line-color`, whose default `requires` no `line-pattern`; `line-gradient` and `fill-pattern`
+ * take over the same way. A class using one is not a black class — it is one these flat-colour
+ * rules cannot express — so it disqualifies the stack, as it did before colourless classes were
+ * read at all.
+ */
+const COLOR_OVERRIDING_PAINT = ["fill-pattern", "line-pattern", "line-gradient"] as const;
+
+/**
  * Combine a stack of filtered, flat-color Mapbox layers into GeoLibre rules.
  * Mapbox draws later layers over earlier ones, so reverse the stack to preserve
  * that precedence in GeoLibre's first-match-wins rule evaluator. An off else
@@ -375,13 +390,27 @@ function parseStackedLayerColors(
   paintProperty: string,
 ): ParsedColor | null {
   if (layers.length < 2) return null;
-  const entries = layers.map((layer) => ({
-    id: asString(layer.id),
-    filter: asArray(layer.filter),
-    color: asString((layer.paint ?? {})[paintProperty]),
-    minZoom: clampZoom(layer.minzoom),
-    maxZoom: clampZoom(layer.maxzoom),
-  }));
+  const entries = layers.map((layer) => {
+    const paint = layer.paint ?? {};
+    const rawColor = paint[paintProperty];
+    return {
+      id: asString(layer.id),
+      filter: asArray(layer.filter),
+      // A class naming no colour is drawn in the spec's default, so that is what it contributes;
+      // disqualifying the stack over one would import one class of sixteen. `null` names none too,
+      // MapLibre reading it as unset. A colour present as something else — an expression, an
+      // interpolation — is one these rules cannot carry, and still disqualifies the stack. An empty
+      // string is left as it was: not a colour, but not this fix's to define either.
+      color:
+        rawColor == null
+          ? COLOR_OVERRIDING_PAINT.some((property) => paint[property] != null)
+            ? null
+            : SPEC_DEFAULT_COLOR
+          : asString(rawColor),
+      minZoom: clampZoom(layer.minzoom),
+      maxZoom: clampZoom(layer.maxzoom),
+    };
+  });
   if (
     entries.some(
       (entry) => !entry.filter || isLegacyLayerFilter(entry.filter) || entry.color === null,
