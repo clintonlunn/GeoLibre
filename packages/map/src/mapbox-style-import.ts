@@ -368,10 +368,14 @@ function isLegacyLayerFilter(filter: unknown[]): boolean {
 export const SPEC_DEFAULT_COLOR = "#000000";
 
 /**
- * Paint properties that draw the feature instead of the colour, so the default does not apply. The
- * spec says so for `line-pattern` (`line-color`'s `requires`); the other two on renderer behaviour.
+ * What draws the feature instead of each colour, so that colour's default does not apply. The spec
+ * says so for `line-pattern` (`line-color`'s `requires`); the other two on renderer behaviour.
  */
-const COLOR_OVERRIDING_PAINT = ["fill-pattern", "line-pattern", "line-gradient"];
+const COLOR_OVERRIDING_PAINT: Record<string, string[]> = {
+  "fill-color": ["fill-pattern"],
+  "line-color": ["line-pattern", "line-gradient"],
+  "circle-color": [],
+};
 
 /**
  * Combine a stack of filtered, flat-color Mapbox layers into GeoLibre rules.
@@ -395,7 +399,7 @@ function parseStackedLayerColors(
       // here reads `layout.visibility` — hidden classes are a separate, pre-existing bug.
       color:
         rawColor == null
-          ? COLOR_OVERRIDING_PAINT.some((property) => paint[property] != null)
+          ? (COLOR_OVERRIDING_PAINT[paintProperty] ?? []).some((key) => paint[key] != null)
             ? null
             : SPEC_DEFAULT_COLOR
           : asString(rawColor),
