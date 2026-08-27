@@ -184,8 +184,10 @@ export {
   type FocalStatistic,
 } from "./raster-client";
 export {
+  LOCAL_SIDECAR_URL,
   checkSidecarHealth,
   setSidecarAuthToken,
+  setSidecarFetch,
   clearRemoteWhiteboxCatalogSnapshotCache,
   fetchConversionJob,
   fetchConversionStatus,
