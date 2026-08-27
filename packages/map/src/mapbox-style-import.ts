@@ -371,7 +371,7 @@ export const SPEC_DEFAULT_COLOR = "#000000";
  * Paint properties that draw the feature instead of the colour, so the default does not apply. The
  * spec says so for `line-pattern` (`line-color`'s `requires`); the other two on renderer behaviour.
  */
-const COLOR_OVERRIDING_PAINT = ["fill-pattern", "line-pattern", "line-gradient"] as const;
+const COLOR_OVERRIDING_PAINT = ["fill-pattern", "line-pattern", "line-gradient"];
 
 /**
  * Combine a stack of filtered, flat-color Mapbox layers into GeoLibre rules.
