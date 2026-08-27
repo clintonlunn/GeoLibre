@@ -364,18 +364,12 @@ function isLegacyLayerFilter(filter: unknown[]): boolean {
   );
 }
 
-/**
- * The style spec's `default` for `fill-color`, `line-color` and `circle-color`, all three `#000000`.
- * Hard-coded because `@geolibre/map` does not depend on the spec; guarded against it by a test.
- */
+/** The spec default for `fill-color`, `line-color` and `circle-color`. Mirrored; a test guards it. */
 export const SPEC_DEFAULT_COLOR = "#000000";
 
 /**
- * Paint properties that draw the feature themselves, leaving the colour unpainted. The spec says so
- * for `line-color`, whose default `requires` no `line-pattern`; `line-gradient` and `fill-pattern`
- * take over the same way. A class using one is not a black class — it is one these flat-colour
- * rules cannot express — so it disqualifies the stack, as it did before colourless classes were
- * read at all.
+ * Paint properties that draw the feature instead of the colour, so the default does not apply. The
+ * spec says so for `line-pattern` (`line-color`'s `requires`); the other two on renderer behaviour.
  */
 const COLOR_OVERRIDING_PAINT = ["fill-pattern", "line-pattern", "line-gradient"] as const;
 
@@ -396,11 +390,10 @@ function parseStackedLayerColors(
     return {
       id: asString(layer.id),
       filter: asArray(layer.filter),
-      // A class naming no colour is drawn in the spec's default, so that is what it contributes;
-      // disqualifying the stack over one would import one class of sixteen. `null` names none too,
-      // MapLibre reading it as unset. A colour present as something else — an expression, an
-      // interpolation — is one these rules cannot carry, and still disqualifies the stack. An empty
-      // string is left as it was: not a colour, but not this fix's to define either.
+      // No colour named (absent or `null`) means the spec default, unless something else paints the
+      // feature. A colour named as anything but a flat string still disqualifies the stack.
+      // `layout.visibility` is deliberately not read here: a hidden class already imports enabled on
+      // `main` whenever the stack combines, so it is its own bug, not this one's to widen or fix.
       color:
         rawColor == null
           ? COLOR_OVERRIDING_PAINT.some((property) => paint[property] != null)
