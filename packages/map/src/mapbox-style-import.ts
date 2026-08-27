@@ -391,9 +391,8 @@ function parseStackedLayerColors(
       id: asString(layer.id),
       filter: asArray(layer.filter),
       // No colour named (absent or `null`) means the spec default, unless something else paints the
-      // feature. A colour named as anything but a flat string still disqualifies the stack.
-      // `layout.visibility` is deliberately not read here: a hidden class already imports enabled on
-      // `main` whenever the stack combines, so it is its own bug, not this one's to widen or fix.
+      // feature. A colour named as anything but a flat string still disqualifies the stack. Nothing
+      // here reads `layout.visibility` — hidden classes are a separate, pre-existing bug.
       color:
         rawColor == null
           ? COLOR_OVERRIDING_PAINT.some((property) => paint[property] != null)

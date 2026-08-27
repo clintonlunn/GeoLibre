@@ -100,9 +100,11 @@ colourless class renders that colour, so a change to either side fails.
 `COLOR_OVERRIDING_PAINT` in the same file mirrors the other half of that
 lookup: the paint properties that draw the feature themselves, so that the
 colour default does not apply. The spec encodes it as `line-color`'s
-`requires: [{ "!": "line-pattern" }]`, which the same test asserts; `fill-pattern`
-and `line-gradient` are listed on the same grounds. A class using one is not
-imported as black — it declines the stack.
+`requires: [{ "!": "line-pattern" }]`, which the same test asserts. `fill-pattern`
+and `line-gradient` are listed for the same reason but the spec does not encode
+it, so only the `line-pattern` entry is a mirror a test can guard; the other two
+rest on how MapLibre renders them. A class using any of them is not imported as
+black — it declines the stack.
 
 ### `maplibre-gl-components` (`packages/plugins/package.json`)
 
