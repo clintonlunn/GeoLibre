@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { DEFAULT_LAYER_STYLE, type LayerStyle } from "@geolibre/core";
 import type { FeatureCollection } from "geojson";
 import { buildMapboxStyle, type ExportableLayer } from "../packages/map/src/mapbox-style-export";
-import { latest } from "@maplibre/maplibre-gl-style-spec";
+import { v8 } from "@maplibre/maplibre-gl-style-spec";
 import {
   applyMapboxStyleImport,
   parseMapboxStyle,
@@ -1277,7 +1277,7 @@ describe("the colour a layer with no colour of its own is drawn in", () => {
       ["circle", "circle-color"],
     ] as const) {
       assert.equal(
-        latest[`paint_${type}`]?.[property]?.default,
+        v8[`paint_${type}`]?.[property]?.default,
         SPEC_DEFAULT_COLOR,
         `${property} still defaults to the colour mapbox-style-import assumes`,
       );
@@ -1286,7 +1286,7 @@ describe("the colour a layer with no colour of its own is drawn in", () => {
 
   it("is not what the spec says a patterned line is drawn in", () => {
     assert.deepEqual(
-      latest.paint_line?.["line-color"]?.requires,
+      v8.paint_line?.["line-color"]?.requires,
       [{ "!": "line-pattern" }],
       "line-pattern still overrides line-color, so COLOR_OVERRIDING_PAINT must still list it",
     );
