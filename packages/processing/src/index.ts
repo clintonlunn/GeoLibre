@@ -47,6 +47,14 @@ export {
   kernelDensityTool,
   emergingHotSpotTool,
   emergingPattern,
+  compositeScoreTool,
+  computeCompositeScores,
+  normalizeFieldValues,
+  numericFieldValue,
+  type CompositeAggregation,
+  type CompositeNullHandling,
+  type CompositeScoreOptions,
+  type CompositeScoreResult,
 } from "./statistics-tools";
 export {
   H3_TOOLS,
