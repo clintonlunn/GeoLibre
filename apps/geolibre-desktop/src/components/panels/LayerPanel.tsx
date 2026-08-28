@@ -77,9 +77,6 @@ import {
 } from "@geolibre/plugins";
 import { defaultBlankBackgroundColor, startFeatureSelection, type MapEngine } from "@geolibre/map";
 import {
-  applyMapboxStyleImport,
-  applyQmlImport,
-  applySldImport,
   buildMapboxStyle,
   buildGeoLibreQueryStyle,
   buildQml,
@@ -88,9 +85,6 @@ import {
   isPlaceholderLayer,
   mapboxStyleToJson,
   geoLibreStyleSourceName,
-  parseMapboxStyle,
-  parseQml,
-  parseSld,
   placeholderMessage,
 } from "@geolibre/map";
 import { getIsMobileViewport } from "../../hooks/useIsMobileViewport";
@@ -245,7 +239,7 @@ import {
   type VectorExportFormat,
 } from "../../lib/vector-export";
 import { openLocalDataFileWithFallback, saveTextFileWithFallback } from "../../lib/tauri-io";
-import { isQmlStyleXml } from "../../lib/style-format";
+import { importStyleText } from "@geolibre/map/style-import";
 import { readPostgisTable, writePostgisTable, writeVectorToSource } from "@geolibre/processing";
 import {
   postgisBaselineKeys,
@@ -1922,6 +1916,13 @@ export function LayerPanel({
   const handleImportStyle = useCallback(
     async (layer: GeoLibreLayer) => {
       clearRefreshStatusTimer(layer.id);
+      const fail = (message: string) => {
+        setRefreshStatuses((current) => ({
+          ...current,
+          [layer.id]: { type: "error", message },
+        }));
+        scheduleStatusClear(layer.id);
+      };
       try {
         const picked = await openLocalDataFileWithFallback({
           filters: [
@@ -1943,64 +1944,13 @@ export function LayerPanel({
         // no-op that looks like a cancel.
         if (!picked || picked.text === undefined) return;
 
-        // Detect the format from the content, which is more reliable than the
-        // file extension (a `.xml` can hold either XML dialect): a QGIS QML has
-        // a `<qgis>`/`renderer-v2` root, an SLD a `StyledLayerDescriptor` root,
-        // and everything else (including a `.geolibre.style.json` export) is
-        // parsed as Mapbox GL style JSON. Its source binding is intentionally
-        // irrelevant here: importing applies symbology to the selected layer.
-        const trimmed = picked.text.trimStart();
-        const isXml = trimmed.startsWith("<");
-        const isQml = isXml && isQmlStyleXml(picked.text);
-        const isSld = isXml && !isQml;
-
-        let result:
-          | ReturnType<typeof parseMapboxStyle>
-          | ReturnType<typeof parseSld>
-          | ReturnType<typeof parseQml>;
-        let matched: number;
-        let applyImport: (base: GeoLibreLayer["style"]) => GeoLibreLayer["style"];
-
-        if (isQml) {
-          const qmlResult = parseQml(picked.text);
-          result = qmlResult;
-          matched = qmlResult.matchedRuleCount;
-          applyImport = (base) => applyQmlImport(base, qmlResult);
-        } else if (isSld) {
-          const sldResult = parseSld(picked.text);
-          result = sldResult;
-          matched = sldResult.matchedRuleCount;
-          applyImport = (base) => applySldImport(base, sldResult);
-        } else {
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(picked.text);
-          } catch {
-            setRefreshStatuses((current) => ({
-              ...current,
-              [layer.id]: {
-                type: "error",
-                message: t("layers.importStyleInvalid"),
-              },
-            }));
-            scheduleStatusClear(layer.id);
-            return;
-          }
-          const mapboxResult = parseMapboxStyle(parsed);
-          result = mapboxResult;
-          matched = mapboxResult.matchedLayerCount;
-          applyImport = (base) => applyMapboxStyleImport(base, mapboxResult);
-        }
-
-        if (matched === 0) {
-          setRefreshStatuses((current) => ({
-            ...current,
-            [layer.id]: {
-              type: "error",
-              message: result.warnings[0] ?? t("layers.importStyleNoMatch"),
-            },
-          }));
-          scheduleStatusClear(layer.id);
+        const imported = importStyleText(picked.text);
+        if (!imported.ok) {
+          fail(
+            imported.reason === "invalid"
+              ? t("layers.importStyleInvalid")
+              : (imported.warning ?? t("layers.importStyleNoMatch")),
+          );
           return;
         }
         // The file picker await can block while the user edits the Style panel,
@@ -2009,26 +1959,21 @@ export function LayerPanel({
         const latest = useAppStore.getState().layers.find((candidate) => candidate.id === layer.id);
         if (!latest) return;
         updateLayer(layer.id, {
-          style: applyImport(latest.style),
+          style: imported.apply(latest.style),
         });
         setRefreshStatuses((current) => ({
           ...current,
           [layer.id]:
-            result.warnings.length > 0
+            imported.warnings.length > 0
               ? {
                   type: "warning",
-                  message: `${t("layers.importStyleSuccess")} ${result.warnings.join(" ")}`,
+                  message: `${t("layers.importStyleSuccess")} ${imported.warnings.join(" ")}`,
                 }
               : { type: "success", message: t("layers.importStyleSuccess") },
         }));
         scheduleStatusClear(layer.id);
       } catch (error) {
-        const message = error instanceof Error ? error.message : t("layers.importStyleError");
-        setRefreshStatuses((current) => ({
-          ...current,
-          [layer.id]: { type: "error", message },
-        }));
-        scheduleStatusClear(layer.id);
+        fail(error instanceof Error ? error.message : t("layers.importStyleError"));
       }
     },
     [clearRefreshStatusTimer, scheduleStatusClear, t, updateLayer],
