@@ -47,14 +47,20 @@ export interface ImportedStyle {
  * that. `no-match` — it parsed, but nothing in it describes symbology this layer can wear, and the
  * parser usually said why.
  */
-export type ImportedStyleError =
-  | { ok: false; reason: "invalid" }
-  | {
-      ok: false;
-      reason: "no-match";
-      /** The parser's own words, when it had any; better than a generic message. */
-      warning?: string;
-    };
+export interface ImportedStyleError {
+  ok: false;
+  reason: "invalid" | "no-match";
+  /**
+   * Everything the parser said, in its own words — better than a generic message. Empty for
+   * `invalid`, where there is nothing to add beyond the reason.
+   *
+   * The same field and the same type as {@link ImportedStyle.warnings} on purpose: how many of
+   * these a caller can show is the caller's problem. A one-line status note takes the first; a
+   * headless caller applying a catalog's style can log them all. Deciding here would bake one
+   * panel's layout into the reader.
+   */
+  warnings: string[];
+}
 
 /**
  * Read a style from text.
@@ -79,11 +85,7 @@ export function importStyleText(text: string): ImportedStyle | ImportedStyleErro
     apply: (base: LayerStyle) => LayerStyle,
   ): ImportedStyle | ImportedStyleError =>
     matched === 0
-      ? {
-          ok: false,
-          reason: "no-match",
-          ...(result.warnings[0] ? { warning: result.warnings[0] } : {}),
-        }
+      ? { ok: false, reason: "no-match", warnings: result.warnings }
       : { ok: true, apply, warnings: result.warnings };
 
   if (isXml && isQmlStyleXml(text)) {
@@ -100,7 +102,7 @@ export function importStyleText(text: string): ImportedStyle | ImportedStyleErro
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { ok: false, reason: "invalid" };
+    return { ok: false, reason: "invalid", warnings: [] };
   }
 
   const result = parseMapboxStyle(parsed);

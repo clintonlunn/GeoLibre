@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { DEFAULT_LAYER_STYLE } from "@geolibre/core";
-import { importStyleText } from "@geolibre/map/style-import";
+import { importStyleText, isQmlStyleXml } from "@geolibre/map/style-import";
 
 /** A minimal SLD 1.0.0 carrying one polygon rule. */
 const SLD = `<?xml version="1.0" encoding="UTF-8"?>
@@ -25,6 +25,29 @@ const QML = `<!DOCTYPE qgis>
 const MAPBOX = JSON.stringify({
   version: 8,
   layers: [{ id: "a", type: "fill", paint: { "fill-color": "#4ce600" } }],
+});
+
+// Exported rather than kept private because the Style Manager's library import sniffs XML the same
+// way; two copies of this heuristic would drift and send the same document to different parsers.
+describe("isQmlStyleXml tells the two XML dialects apart", () => {
+  it("recognizes a QML by its qgis root", () => {
+    assert.equal(isQmlStyleXml(QML), true);
+  });
+
+  // A QML fragment saved without the <qgis> wrapper is still a QML; QGIS's own "save style" writes
+  // the renderer element as the root.
+  it("recognizes a QML by a bare renderer-v2 root", () => {
+    assert.equal(isQmlStyleXml('<renderer-v2 type="singleSymbol"></renderer-v2>'), true);
+  });
+
+  it("does not claim an SLD", () => {
+    assert.equal(isQmlStyleXml(SLD), false);
+  });
+
+  // Substring matches would be wrong: an SLD naming a layer "qgis-export" is not a QML.
+  it("matches the element, not the word", () => {
+    assert.equal(isQmlStyleXml("<Name>qgis</Name>"), false);
+  });
 });
 
 // The format is read off the content, not a file extension: a `.xml` can hold either XML dialect,
@@ -84,7 +107,7 @@ describe("importStyleText separates unreadable text from an empty style", () => 
   it("calls text that is not a style invalid", () => {
     const result = importStyleText("not a style");
 
-    assert.deepEqual(result, { ok: false, reason: "invalid" });
+    assert.deepEqual(result, { ok: false, reason: "invalid", warnings: [] });
   });
 
   // `LayerPanel` guards on the picked file rather than its text specifically so an empty file still
@@ -94,7 +117,7 @@ describe("importStyleText separates unreadable text from an empty style", () => 
     ["only whitespace", "   \n\t "],
   ] as const) {
     it(`calls ${label} text invalid, not a silent no-op`, () => {
-      assert.deepEqual(importStyleText(text), { ok: false, reason: "invalid" });
+      assert.deepEqual(importStyleText(text), { ok: false, reason: "invalid", warnings: [] });
     });
   }
 
@@ -126,10 +149,19 @@ describe("importStyleText separates unreadable text from an empty style", () => 
 
     assert.equal(result.ok, false);
     assert.equal(
-      typeof (result.ok === false ? result.warning : undefined),
+      typeof (result.ok === false ? result.warnings[0] : undefined),
       "string",
       "so the note can say why rather than a generic no-match",
     );
+  });
+
+  // Same field, same type, whether the read succeeded or not: how many of these fit on screen is
+  // the caller's problem, and a headless caller applying a catalog's style wants all of them.
+  it("always carries a warnings array, even when there was nothing to say", () => {
+    const invalid = importStyleText("not a style");
+
+    assert.equal(invalid.ok, false);
+    assert.deepEqual(invalid.ok === false && invalid.warnings, []);
   });
 });
 

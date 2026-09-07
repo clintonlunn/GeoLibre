@@ -240,6 +240,8 @@ import {
 } from "../../lib/vector-export";
 import { openLocalDataFileWithFallback, saveTextFileWithFallback } from "../../lib/tauri-io";
 import { importStyleText } from "@geolibre/map/style-import";
+import { PasteStyleDialog } from "./PasteStyleDialog";
+import { importedStyleErrorMessage, importedStyleNote } from "../../lib/style-import-note";
 import { readPostgisTable, writePostgisTable, writeVectorToSource } from "@geolibre/processing";
 import {
   postgisBaselineKeys,
@@ -792,6 +794,9 @@ export function LayerPanel({
   const [layerPendingRemoval, setLayerPendingRemoval] = useState<GeoLibreLayer | null>(null);
   const [refreshSettingsLayerId, setRefreshSettingsLayerId] = useState<string | null>(null);
   const [refreshStatuses, setRefreshStatuses] = useState<Record<string, LayerRefreshStatus>>({});
+  // The layer a pasted style is destined for, or null when the box is closed. Keyed by id
+  // rather than a boolean so text pasted for one layer can never land on another.
+  const [pasteStyleLayerId, setPasteStyleLayerId] = useState<string | null>(null);
   // "Last synced <relative time>" is derived from the clock, not from store
   // state, so without a tick the label would keep reading "a few seconds ago"
   // until an unrelated re-render happened to recompute it. Tick once a minute
@@ -1913,6 +1918,19 @@ export function LayerPanel({
   // back in instead of being rebuilt by hand. The format is detected from the
   // file content (XML vs JSON). Anything the style could not represent is
   // surfaced as a warning rather than dropped silently.
+  // Both style-import doors — the file picker and the paste box — land here, so the row says the
+  // same thing however the style arrived.
+  const noteImportedStyle = useCallback(
+    (layerId: string, warnings: string[]) => {
+      setRefreshStatuses((current) => ({
+        ...current,
+        [layerId]: importedStyleNote(t, warnings),
+      }));
+      scheduleStatusClear(layerId);
+    },
+    [scheduleStatusClear, t],
+  );
+
   const handleImportStyle = useCallback(
     async (layer: GeoLibreLayer) => {
       clearRefreshStatusTimer(layer.id);
@@ -1946,37 +1964,25 @@ export function LayerPanel({
 
         const imported = importStyleText(picked.text);
         if (!imported.ok) {
-          fail(
-            imported.reason === "invalid"
-              ? t("layers.importStyleInvalid")
-              : (imported.warning ?? t("layers.importStyleNoMatch")),
-          );
+          fail(importedStyleErrorMessage(t, imported));
           return;
         }
         // The file picker await can block while the user edits the Style panel,
         // so merge onto the current store style (not the pre-await snapshot) to
         // avoid clobbering a concurrent edit, matching handleRefreshLayer.
         const latest = useAppStore.getState().layers.find((candidate) => candidate.id === layer.id);
+        // Removed while the picker was open. Nothing to style and nothing to report it on, so the
+        // menu simply closes.
         if (!latest) return;
         updateLayer(layer.id, {
           style: imported.apply(latest.style),
         });
-        setRefreshStatuses((current) => ({
-          ...current,
-          [layer.id]:
-            imported.warnings.length > 0
-              ? {
-                  type: "warning",
-                  message: `${t("layers.importStyleSuccess")} ${imported.warnings.join(" ")}`,
-                }
-              : { type: "success", message: t("layers.importStyleSuccess") },
-        }));
-        scheduleStatusClear(layer.id);
+        noteImportedStyle(layer.id, imported.warnings);
       } catch (error) {
         fail(error instanceof Error ? error.message : t("layers.importStyleError"));
       }
     },
-    [clearRefreshStatusTimer, scheduleStatusClear, t, updateLayer],
+    [clearRefreshStatusTimer, noteImportedStyle, scheduleStatusClear, t, updateLayer],
   );
 
   // Commit the layer's current (edited) features back to the source they were
@@ -4246,6 +4252,16 @@ export function LayerPanel({
                                   </DropdownMenuItem>
                                 )}
                                 {canImportStyle && (
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      setPasteStyleLayerId(layer.id);
+                                    }}
+                                  >
+                                    <ClipboardPaste className="me-2 h-3.5 w-3.5" />
+                                    {t("layers.importStyleFromText")}
+                                  </DropdownMenuItem>
+                                )}
+                                {canImportStyle && (
                                   <>
                                     <DropdownMenuSeparator />
                                     {/* The Style Manager reads the selected layer,
@@ -4957,6 +4973,23 @@ export function LayerPanel({
           </div>
         </DialogContent>
       </Dialog>
+      <PasteStyleDialog
+        open={pasteStyleLayerId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPasteStyleLayerId(null);
+        }}
+        onApply={(imported) => {
+          if (!pasteStyleLayerId) return;
+          const latest = useAppStore
+            .getState()
+            .layers.find((candidate) => candidate.id === pasteStyleLayerId);
+          // Removed while the box was open — the dialog closes rather than styling a layer that is
+          // no longer there.
+          if (!latest) return;
+          updateLayer(pasteStyleLayerId, { style: imported.apply(latest.style) });
+          noteImportedStyle(pasteStyleLayerId, imported.warnings);
+        }}
+      />
     </aside>
   );
 }
