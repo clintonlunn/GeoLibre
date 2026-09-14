@@ -227,6 +227,23 @@ describe("a QML fragment with no <qgis> wrapper", () => {
     `<Option name="line_width" type="QString" value="1"/>` +
     `</Option></layer></symbol></symbols></renderer-v2>`;
 
+  const LABELING =
+    `<labeling type="simple"><settings>` +
+    `<text-style fieldName="name" textColor="17,17,17,255"/>` +
+    `<placement placement="1"/></settings></labeling>`;
+
+  // Every root `parseQml` reads has to be a root `isQmlStyleXml` claims. A root it accepts but the
+  // detection misses goes to the SLD parser and comes back as no-match.
+  for (const [label, fragment] of [
+    ["renderer", RENDERER],
+    ["labeling", LABELING],
+  ] as const) {
+    it(`routes a bare ${label} fragment to the QML parser`, () => {
+      assert.ok(isQmlStyleXml(fragment), "the detection claims this root");
+      assert.ok(importStyleText(fragment).ok, "and the parser reads it");
+    });
+  }
+
   it("reads the bare renderer the same as the wrapped one", () => {
     const bare = importStyleText(RENDERER);
     const wrapped = importStyleText(`<qgis>${RENDERER}</qgis>`);

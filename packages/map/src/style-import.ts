@@ -20,8 +20,11 @@ import { applySldImport, parseSld } from "./sld-import";
 import { applyQmlImport, parseQml } from "./qml-import";
 
 /**
- * Whether an XML style document is a QGIS QML (as opposed to an OGC SLD): a QML has a `<qgis>` or
- * `<renderer-v2>` root element.
+ * Whether an XML style document is a QGIS QML (as opposed to an OGC SLD): a QML has a `<qgis>`
+ * root, or is a fragment cut out of one, whose root is then `<renderer-v2>` or `<labeling>`.
+ *
+ * Every root `parseQml` reads must appear here. A root it accepts but this misses routes to the SLD
+ * parser instead, and comes back as no-match.
  *
  * Exported because the Style Manager's library import sniffs the same way and the two must not
  * drift on the heuristic.
@@ -30,7 +33,7 @@ import { applyQmlImport, parseQml } from "./qml-import";
  * @returns True for QGIS QML, false for other XML dialects (e.g. SLD).
  */
 export function isQmlStyleXml(text: string): boolean {
-  return /<qgis[\s>]|<renderer-v2[\s>]/.test(text);
+  return /<qgis[\s>]|<renderer-v2[\s>]|<labeling[\s>]/.test(text);
 }
 
 /** A style that was read, and what it does to a layer's existing symbology. */
