@@ -1508,9 +1508,9 @@ describe("a style layer the publisher switched off", () => {
     assert.equal(result.labels.enabled, true);
     assert.equal(result.labels.field, "name");
   });
-  // `winsOver` settles the two contests where one branch replaces another. Everything else a layer
-  // contributes is shared: the colour renderer is claimed once, and stroke comes from whichever of
-  // line, fill outline or circle stroke speaks last. A hidden layer stands aside from those too.
+  // The contest is not only over which branch runs. Everything else a layer contributes is shared:
+  // the colour renderer is claimed once, and stroke comes from whichever of line, fill outline or
+  // circle stroke speaks last. `speaking` drops a hidden layer from all of it at once.
   const categorized = (a: string, b: string) => [
     "match",
     ["to-string", ["get", "k"]],
