@@ -1638,4 +1638,34 @@ describe("a style layer the publisher switched off", () => {
 
     assert.equal(result.strokeColor, "#ff0000");
   });
+  it("says a type whose layers are all hidden was not imported", () => {
+    const style = parseMapboxStyle({
+      layers: [
+        {
+          id: "f1",
+          type: "fill",
+          "source-layer": "x",
+          layout: { visibility: "none" },
+          paint: { "fill-color": "#111111" },
+        },
+        {
+          id: "f2",
+          type: "fill",
+          "source-layer": "x",
+          layout: { visibility: "none" },
+          paint: { "fill-color": "#222222" },
+        },
+        { id: "l", type: "line", "source-layer": "x", paint: { "line-color": "#00ff00" } },
+      ],
+    } as never);
+
+    assert.ok(
+      style.warnings.some((warning) => /fill layers are all hidden/.test(warning)),
+      "none of them was imported, so the report must not say the first was",
+    );
+    assert.ok(
+      !style.warnings.some((warning) => /only the first was imported/.test(warning)),
+      `got: ${style.warnings.join(" ")}`,
+    );
+  });
 });

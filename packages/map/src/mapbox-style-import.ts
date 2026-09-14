@@ -137,8 +137,9 @@ function asString(value: unknown): string | null {
 /**
  * Whether the style's author leaves this layer drawn.
  *
- * Only the literal `"none"` hides a layer. A `visibility` given as an expression means visible at
- * some zooms, and the rule's own zoom range already carries that, so it counts as drawn here.
+ * The spec makes `visibility` a plain enum, `"visible"` or `"none"`, so only the literal `"none"`
+ * hides a layer. Anything else a non-conformant style puts there counts as drawn, which leaves the
+ * layer importable rather than silently dropped.
  */
 function isDrawn(layer: RawStyleLayer): boolean {
   return asString((layer.layout ?? {}).visibility) !== "none";
@@ -1032,9 +1033,20 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
 
   // Filtered flat-color stacks can be represented exactly as rules only when
   // that geometry actually claims the shared renderer. Flag every other stack.
+  const speakingByType: Record<string, RawStyleLayer | undefined> = {
+    fill,
+    "fill-extrusion": extrusion,
+    line,
+    circle,
+    symbol,
+  };
   for (const type of ["fill", "fill-extrusion", "line", "circle", "symbol"]) {
     if (byType(type).length < 2) continue;
-    if (appliedStackTypes.has(type)) {
+    // Every layer of this type stands aside, so none of them was imported. Saying the first was
+    // would send the reader looking for symbology that is not there.
+    if (speakingByType[type] === undefined) {
+      warnings.push(`The style's ${type} layers are all hidden; none was imported.`);
+    } else if (appliedStackTypes.has(type)) {
       warnings.push(
         `The style's multiple ${type} layers were combined as rules; paint properties other than color come from the bottom-most layer.`,
       );
