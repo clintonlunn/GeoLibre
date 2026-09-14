@@ -147,6 +147,7 @@ import {
   ChevronUp,
   CircleDashed,
   ClipboardPaste,
+  ClipboardType,
   Copy,
   Database,
   Download,
@@ -4257,7 +4258,7 @@ export function LayerPanel({
                                       setPasteStyleLayerId(layer.id);
                                     }}
                                   >
-                                    <ClipboardPaste className="me-2 h-3.5 w-3.5" />
+                                    <ClipboardType className="me-2 h-3.5 w-3.5" />
                                     {t("layers.importStyleFromText")}
                                   </DropdownMenuItem>
                                 )}

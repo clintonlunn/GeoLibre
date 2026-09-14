@@ -74,7 +74,11 @@ import { QuickFiltersSection } from "./QuickFiltersSection";
 import { VirtualFieldsSection } from "./VirtualFieldsSection";
 import { getNetcdfLayerState, NETCDF_IMAGE_SOURCE_KIND } from "../../lib/netcdf-image-symbology";
 import { PasteStyleDialog } from "./PasteStyleDialog";
-import { importedStyleNote, type ImportedStyleNote } from "../../lib/style-import-note";
+import {
+  IMPORTED_STYLE_NOTE_DURATION_MS,
+  importedStyleNote,
+  type ImportedStyleNote,
+} from "../../lib/style-import-note";
 import { NetcdfProfilePanel } from "./NetcdfProfilePanel";
 import { NetcdfSymbologySection } from "./NetcdfSymbologySection";
 import { RasterSymbologySection } from "./RasterSymbologySection";
@@ -1172,6 +1176,18 @@ export function StylePanel({
     setPasteStyleOpen(false);
     setPasteStyleNotice(null);
   }, [selectedLayerId]);
+
+  // Fade the header note the way the Layers panel fades its row status. Without this a stale
+  // "Style imported." stays pinned under the header while the user keeps working on the same layer.
+  // The cleanup covers a second import, a change of layer, and unmount.
+  useEffect(() => {
+    if (!pasteStyleNotice) return;
+    const timer = window.setTimeout(
+      () => setPasteStyleNotice(null),
+      IMPORTED_STYLE_NOTE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [pasteStyleNotice]);
 
   const layer = layers.find((l) => l.id === selectedLayerId);
 

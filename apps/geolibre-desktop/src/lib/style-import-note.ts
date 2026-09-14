@@ -10,6 +10,14 @@
 import type { TFunction } from "i18next";
 import type { ImportedStyleError } from "@geolibre/map/style-import";
 
+/**
+ * How long a note stays on screen.
+ *
+ * Mirrors `REFRESH_STATUS_DURATION_MS` in the Layers panel, which fades the row status. Both doors
+ * report the same outcomes, so both report them for the same length of time.
+ */
+export const IMPORTED_STYLE_NOTE_DURATION_MS = 4_000;
+
 export interface ImportedStyleNote {
   type: "success" | "warning";
   message: string;
