@@ -1672,6 +1672,25 @@ describe("a style layer the publisher switched off", () => {
     assert.deepEqual(style.warnings, ["The style's heatmap layer is hidden; it was not imported."]);
   });
 
+  it("says nothing about a drawn symbol layer", () => {
+    // The diagnostic reads a type missing from its lookup as "stands aside", so a symbol layer,
+    // which never stands aside, has to be listed there or every label import reports itself hidden.
+    const style = parseMapboxStyle({
+      layers: [
+        {
+          id: "s",
+          type: "symbol",
+          "source-layer": "x",
+          layout: { "text-field": ["get", "name"] },
+          paint: { "text-color": "#111111" },
+        },
+      ],
+    } as never);
+
+    assert.deepEqual(style.warnings, []);
+    assert.equal(style.labels?.enabled, true);
+  });
+
   it("says nothing when the lone layer of a type is drawn", () => {
     const style = parseMapboxStyle({
       layers: [{ id: "f", type: "fill", "source-layer": "x", paint: { "fill-color": "#111111" } }],
@@ -1712,6 +1731,50 @@ describe("a style layer the publisher switched off", () => {
   });
   // Importing over a layer that already has a renderer, rather than over the default style, is
   // where a mode the importer forgot to set shows up.
+  it("replaces a categorized renderer with a flat extrusion colour", () => {
+    const base = {
+      ...DEFAULT_LAYER_STYLE,
+      vectorStyleMode: "categorized" as const,
+      vectorStyleProperty: "old",
+      vectorStyleStops: [{ value: "z", color: "#abcdef" }],
+    };
+    const result = applyMapboxStyleImport(
+      base,
+      parseMapboxStyle({
+        layers: [
+          {
+            id: "e",
+            type: "fill-extrusion",
+            "source-layer": "x",
+            paint: { "fill-extrusion-color": "#00ff00" },
+          },
+        ],
+      } as never),
+    );
+
+    assert.equal(result.vectorStyleMode, "single");
+    assert.equal(result.extrusionColor, "#00ff00");
+  });
+
+  it("leaves the renderer alone when an extrusion names no colour", () => {
+    const base = { ...DEFAULT_LAYER_STYLE, vectorStyleMode: "categorized" as const };
+    const result = applyMapboxStyleImport(
+      base,
+      parseMapboxStyle({
+        layers: [
+          {
+            id: "e",
+            type: "fill-extrusion",
+            "source-layer": "x",
+            paint: { "fill-extrusion-height": 10 },
+          },
+        ],
+      } as never),
+    );
+
+    assert.equal(result.vectorStyleMode, "categorized", "the style said nothing about colour");
+  });
+
   it("replaces a categorized renderer when every line class is hidden", () => {
     const base = {
       ...DEFAULT_LAYER_STYLE,

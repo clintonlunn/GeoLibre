@@ -838,17 +838,6 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   const rawCircle = firstOfType("circle");
   const rawHeatmap = firstOfType("heatmap");
 
-  /**
-   * Whether a layer competing for one GeoLibre setting should win it. A drawn layer always does. A
-   * hidden one wins only when nothing drawn is contesting it, so a lone hidden layer still donates
-   * its paint the way it does today.
-   */
-  const winsOver = (
-    candidate: RawStyleLayer | undefined,
-    rival: RawStyleLayer | undefined,
-  ): candidate is RawStyleLayer =>
-    candidate !== undefined && (isDrawn(candidate) || !rival || !isDrawn(rival));
-
   // One layer's symbology reaches several GeoLibre settings, and the render types compete for all of
   // them: the colour renderer is claimed once, stroke comes from whichever of line, fill outline or
   // circle stroke speaks last, and so on down to opacity and width. Rather than guard each of those
@@ -870,8 +859,9 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   const symbol = firstOfType("symbol");
 
   // A drawn fill beats a hidden extrusion, which would otherwise extrude the layer and drop the
-  // fill's own colour on the floor.
-  if (winsOver(extrusion, fill)) {
+  // fill's own colour on the floor. `speaking` has already settled that: a hidden extrusion is not a
+  // candidate here while the fill draws.
+  if (extrusion) {
     matchedLayerCount += 1;
     patch.extrusionEnabled = true;
     const paint = extrusion.paint ?? {};
@@ -885,6 +875,11 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
       colorClaimed = true;
     } else if (color.color) {
       patch.extrusionColor = color.color;
+      // Same reason the line branch says so for its flat colour: without a mode the layer keeps
+      // whatever categorized or rule-based renderer it already had, and a style describing one
+      // extrusion colour imports as a no-op over it.
+      patch.vectorStyleMode = "single";
+      colorClaimed = true;
     }
     const opacity = asFiniteNumber(paint["fill-extrusion-opacity"]);
     if (opacity !== null) patch.extrusionOpacity = opacity;
@@ -1005,8 +1000,8 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   }
 
   // GeoLibre has one point renderer, so circle and heatmap contest it. A drawn circle beats a
-  // hidden heatmap.
-  if (winsOver(heatmap, circle)) {
+  // hidden heatmap, which `speaking` has already removed from the running.
+  if (heatmap) {
     matchedLayerCount += 1;
     // A style with both (e.g. split by zoom) collapses to the heatmap; flag the loss.
     if (circle) {
@@ -1046,6 +1041,9 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     line,
     circle,
     heatmap,
+    // `speaking` never filters a symbol layer, because labels are not contested. The entry still
+    // has to be here: the loop reads a missing key as "this type stands aside" and would report
+    // every symbol layer as hidden.
     symbol,
   };
   for (const type of ["fill", "fill-extrusion", "line", "circle", "heatmap", "symbol"]) {
