@@ -1439,6 +1439,38 @@ describe("a style layer the publisher switched off", () => {
     assert.equal(result.strokeColor, "#ff0000", "there is no drawn alternative to prefer");
   });
 
+  it("drops a hidden heatmap even when nothing else claims the point renderer", () => {
+    // One decision for the whole style, not one per contest: the question is whether the author
+    // left the layer on, not whether another layer wants the same field.
+    const style = parseMapboxStyle({
+      layers: [
+        { id: "f", type: "fill", "source-layer": "x", paint: { "fill-color": "#00ff00" } },
+        { id: "h", type: "heatmap", "source-layer": "x", layout: { visibility: "none" } },
+      ],
+    } as never);
+
+    assert.equal(style.style.pointRenderer, undefined);
+    assert.deepEqual(style.warnings, ["The style's heatmap layer is hidden; it was not imported."]);
+  });
+
+  it("does not import labels from a symbol switched off beside drawn paint", () => {
+    // A hand-authored style turning labels off. Distinct from the case below, where the whole
+    // style is hidden because GeoLibre exported it from a hidden layer.
+    const style = parseMapboxStyle({
+      layers: [
+        {
+          id: "s",
+          type: "symbol",
+          "source-layer": "x",
+          layout: { visibility: "none", "text-field": ["get", "name"] },
+        },
+        { id: "f", type: "fill", "source-layer": "x", paint: { "fill-color": "#00ff00" } },
+      ],
+    } as never);
+
+    assert.equal(style.labels, null);
+  });
+
   it("still imports labels from a hidden symbol layer", () => {
     // GeoLibre's exporter stamps the whole layer's `visible` flag onto every layer it emits, so
     // reading it as class state would switch labels off when re-importing an export taken from a

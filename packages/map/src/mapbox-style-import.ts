@@ -843,7 +843,15 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   // circle stroke speaks last, and so on down to opacity and width. Rather than guard each of those
   // in turn, a hidden layer stops being a candidate at all while any drawn layer can speak. When
   // every candidate is hidden nothing stands aside, so a hidden-only style imports as it does today.
-  const someoneIsDrawn = [rawExtrusion, rawFill, rawLine, rawCircle, rawHeatmap].some(
+  //
+  // This is deliberately one decision for the whole style rather than one per contest. A hidden
+  // heatmap beside a drawn fill is dropped even though no other layer claims the point renderer,
+  // because the question being answered is "did the author leave this layer on", not "is another
+  // layer fighting for this exact field". Per-contest gating would import a layer the author
+  // switched off whenever nothing else happened to want the same setting, which is the behaviour
+  // this is here to remove. Nothing is lost quietly: every type dropped this way is reported below.
+  const rawSymbol = firstOfType("symbol");
+  const someoneIsDrawn = [rawExtrusion, rawFill, rawLine, rawCircle, rawHeatmap, rawSymbol].some(
     (candidate) => candidate !== undefined && isDrawn(candidate),
   );
   const speaking = (candidate: RawStyleLayer | undefined): RawStyleLayer | undefined =>
@@ -854,9 +862,12 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   const line = speaking(rawLine);
   const circle = speaking(rawCircle);
   const heatmap = speaking(rawHeatmap);
-  // Labels are not contested by any other type, and GeoLibre's own exporter stamps the layer's
-  // `visible` flag onto every layer it emits, so a hidden symbol still carries its labels.
-  const symbol = firstOfType("symbol");
+  // A symbol layer goes through the same gate as the rest. The exporter stamps the layer's own
+  // `visible` flag onto every layer it emits, so re-importing an export taken from a hidden layer
+  // must not switch the labels off. That case is a style with nothing drawn anywhere, where nothing
+  // stands aside and the symbol still speaks. A style whose symbol alone is switched off, beside
+  // drawn paint, is an author turning labels off, and it is read that way.
+  const symbol = speaking(rawSymbol);
 
   // A drawn fill beats a hidden extrusion, which would otherwise extrude the layer and drop the
   // fill's own colour on the floor. `speaking` has already settled that: a hidden extrusion is not a
