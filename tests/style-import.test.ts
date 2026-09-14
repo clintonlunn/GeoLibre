@@ -240,3 +240,25 @@ describe("a QML fragment with no <qgis> wrapper", () => {
     );
   });
 });
+
+// The paste box shows the parser's own words. A reader that says "file" there is talking about
+// something the user never touched, which is why `layers.importStyleInvalid` dropped the word too.
+describe("what a failed import calls the thing it could not read", () => {
+  for (const [label, text] of [
+    ["a non-SLD XML document", "<foo/>"],
+    ["JSON that is not a style", '{"not":"a style"}'],
+    ["a QML with no renderer", "<qgis></qgis>"],
+  ] as const) {
+    it(`never says "file" for ${label}`, () => {
+      const result = importStyleText(text);
+
+      assert.ok(!result.ok, "this input carries no symbology");
+      for (const warning of result.warnings) {
+        assert.ok(
+          !/\bfiles?\b/i.test(warning),
+          `a paste has no file, so this must not mention one: ${warning}`,
+        );
+      }
+    });
+  }
+});

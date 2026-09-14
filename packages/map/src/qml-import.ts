@@ -569,7 +569,7 @@ export function parseQml(xml: string): QmlImportResult {
   try {
     root = parser.parse(xml);
   } catch {
-    warnings.push("The file could not be parsed as XML; nothing was imported.");
+    warnings.push("That could not be parsed as XML; nothing was imported.");
     return { style: patch, labels, warnings, matchedRuleCount: 0 };
   }
 
@@ -583,7 +583,9 @@ export function parseQml(xml: string): QmlImportResult {
       ? rootNode
       : undefined;
   if (!isNode(qgis)) {
-    warnings.push("This file is not a QGIS QML style (no <qgis> root); nothing was imported.");
+    warnings.push(
+      "That is not a QGIS QML style (no <qgis> or <renderer-v2> root); nothing was imported.",
+    );
     return { style: patch, labels, warnings, matchedRuleCount: 0 };
   }
 
