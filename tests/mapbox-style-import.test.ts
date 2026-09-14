@@ -1659,6 +1659,19 @@ describe("a style layer the publisher switched off", () => {
     ]);
   });
 
+  it("says so when a hidden heatmap is dropped for a drawn circle", () => {
+    // `heatmap` reaches the point renderer, so it needs the same report as the other types. It was
+    // missing from the diagnostic list entirely.
+    const style = parseMapboxStyle({
+      layers: [
+        { id: "h", type: "heatmap", "source-layer": "x", layout: { visibility: "none" } },
+        { id: "c", type: "circle", "source-layer": "x", paint: { "circle-color": "#00ff00" } },
+      ],
+    } as never);
+
+    assert.deepEqual(style.warnings, ["The style's heatmap layer is hidden; it was not imported."]);
+  });
+
   it("says nothing when the lone layer of a type is drawn", () => {
     const style = parseMapboxStyle({
       layers: [{ id: "f", type: "fill", "source-layer": "x", paint: { "fill-color": "#111111" } }],
@@ -1695,6 +1708,45 @@ describe("a style layer the publisher switched off", () => {
     assert.ok(
       !style.warnings.some((warning) => /only the first was imported/.test(warning)),
       `got: ${style.warnings.join(" ")}`,
+    );
+  });
+  // Importing over a layer that already has a renderer, rather than over the default style, is
+  // where a mode the importer forgot to set shows up.
+  it("replaces a categorized renderer when every line class is hidden", () => {
+    const base = {
+      ...DEFAULT_LAYER_STYLE,
+      vectorStyleMode: "categorized" as const,
+      vectorStyleProperty: "old",
+      vectorStyleStops: [{ value: "z", color: "#abcdef" }],
+    };
+    const result = applyMapboxStyleImport(
+      base,
+      parseMapboxStyle({
+        layers: [
+          {
+            id: "a",
+            type: "line",
+            "source-layer": "f",
+            layout: { visibility: "none" },
+            paint: { "line-color": "#00ff00" },
+            filter: ["==", ["get", "c"], "a"],
+          },
+          {
+            id: "b",
+            type: "line",
+            "source-layer": "f",
+            layout: { visibility: "none" },
+            paint: { "line-color": "#e60000" },
+            filter: ["==", ["get", "c"], "b"],
+          },
+        ],
+      } as never),
+    );
+
+    assert.equal(
+      result.vectorStyleMode,
+      "single",
+      "the style describes one flat colour, so the old renderer must not survive it",
     );
   });
 });

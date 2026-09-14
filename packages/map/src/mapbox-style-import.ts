@@ -940,6 +940,13 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
         // above), whereas applyColorRenderer would route it into fillColor.
         applyColorRenderer({ ...color, color: undefined }, patch);
         colorClaimed = true;
+      } else if (color.mode === "single") {
+        // A flat line colour still owns the renderer, and saying so is the whole point: without it
+        // the layer keeps whatever categorized or rule-based renderer it already had, and the
+        // import reads as a no-op over a style that plainly describes one colour. The fallback
+        // colour itself still stays out of `fillColor`, for the reason above.
+        patch.vectorStyleMode = "single";
+        colorClaimed = true;
       }
     }
     if (paint["line-width"] !== undefined) {
@@ -1038,9 +1045,10 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     "fill-extrusion": extrusion,
     line,
     circle,
+    heatmap,
     symbol,
   };
-  for (const type of ["fill", "fill-extrusion", "line", "circle", "symbol"]) {
+  for (const type of ["fill", "fill-extrusion", "line", "circle", "heatmap", "symbol"]) {
     const count = byType(type).length;
     if (count === 0) continue;
     // Every layer of this type stands aside, so none of them was imported. This is reported for a
