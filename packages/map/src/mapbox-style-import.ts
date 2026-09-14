@@ -458,9 +458,14 @@ function parseStackedLayerColors(
   ) {
     return null;
   }
-  // Every class switched off describes no symbology. Rules that are all disabled would import the
-  // layer blank while reporting success, so decline and let the single-layer path speak instead.
-  if (!entries.some((entry) => entry.drawn)) return null;
+  // Every class switched off describes no rules worth building: they would all be disabled, which
+  // imports the layer blank while reporting success. It still describes a colour, so hand back the
+  // bottom-most one as a flat renderer rather than nothing. Returning `null` here would drop the
+  // spec default this loop already resolved, and a layer carrying a categorized or rule-based
+  // renderer would keep it through an import that plainly replaces it.
+  if (!entries.some((entry) => entry.drawn)) {
+    return { mode: "single", color: entries[0].color! };
+  }
 
   const rules: NonNullable<LayerStyle["vectorRules"]> = entries.reverse().map((entry, index) => ({
     id: `import-layer-${index}`,
@@ -830,6 +835,9 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   const stackedFill = parseStackedLayerColors(byType("fill"), "fill-color");
   const stackedLine = parseStackedLayerColors(byType("line"), "line-color");
   const stackedCircle = parseStackedLayerColors(byType("circle"), "circle-color");
+  // A stack whose classes are all hidden comes back as a flat colour rather than rules. It is still
+  // one layer's worth of symbology, so it must not be counted or reported as a combined stack.
+  const builtRules = (parsed: ParsedColor | null): boolean => Boolean(parsed?.rules);
   const appliedStackTypes = new Set<string>();
 
   const rawExtrusion = firstOfType("fill-extrusion");
@@ -902,8 +910,8 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     if (base !== null) patch.extrusionBase = base;
     applyZoomRange(extrusion, patch);
   } else if (fill) {
-    matchedLayerCount += stackedFill ? byType("fill").length : 1;
-    if (stackedFill) appliedStackTypes.add("fill");
+    matchedLayerCount += builtRules(stackedFill) ? byType("fill").length : 1;
+    if (builtRules(stackedFill)) appliedStackTypes.add("fill");
     patch.extrusionEnabled = false;
     const paint = fill.paint ?? {};
     const fillColor = stackedFill ?? parseColorValue(paint["fill-color"], warnings);
@@ -921,7 +929,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     }
     const outline = parseStrokeColor(paint["fill-outline-color"]);
     if (outline) patch.strokeColor = outline;
-    if (stackedFill) applyStackedZoomRange(byType("fill"), patch);
+    if (builtRules(stackedFill)) applyStackedZoomRange(byType("fill"), patch);
     else applyZoomRange(fill, patch);
   }
 
@@ -938,7 +946,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     if (!colorClaimed && !circle) {
       const color = stackedLine ?? parseColorValue(paint["line-color"], warnings);
       if (color.mode && color.mode !== "single") {
-        if (stackedLine) {
+        if (builtRules(stackedLine)) {
           appliedStackTypes.add("line");
           matchedLayerCount += byType("line").length - 1;
         }
@@ -969,7 +977,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     const paint = circle.paint ?? {};
     if (!colorClaimed) {
       applyColorRenderer(stackedCircle ?? parseColorValue(paint["circle-color"], warnings), patch);
-      if (stackedCircle) {
+      if (builtRules(stackedCircle)) {
         appliedStackTypes.add("circle");
         matchedLayerCount += byType("circle").length - 1;
       }

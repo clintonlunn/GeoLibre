@@ -1888,6 +1888,72 @@ describe("a style layer the publisher switched off", () => {
     assert.equal(result.vectorStyleMode, "categorized", "the style said nothing about colour");
   });
 
+  it("does not report an all-hidden stack as combined into rules", () => {
+    const style = parseMapboxStyle({
+      layers: [
+        {
+          id: "a",
+          type: "fill",
+          "source-layer": "f",
+          layout: { visibility: "none" },
+          paint: { "fill-color": "#111111" },
+          filter: ["==", ["get", "c"], "a"],
+        },
+        {
+          id: "b",
+          type: "fill",
+          "source-layer": "f",
+          layout: { visibility: "none" },
+          paint: { "fill-color": "#222222" },
+          filter: ["==", ["get", "c"], "b"],
+        },
+      ],
+    } as never);
+
+    assert.equal(style.style.vectorStyleMode, "single");
+    assert.equal(style.style.vectorRules, undefined, "a flat colour is not a set of rules");
+    assert.equal(style.matchedLayerCount, 1, "one layer's worth of symbology was taken");
+    assert.deepEqual(style.warnings, [
+      "The style has multiple fill layers, all hidden; only the bottom-most one was imported.",
+    ]);
+  });
+
+  it("replaces a categorized renderer when every hidden class omits its colour", () => {
+    // Declining the stack outright used to throw away the spec default this path had already
+    // resolved, leaving the old renderer in place through an import that replaces it.
+    const base = {
+      ...DEFAULT_LAYER_STYLE,
+      vectorStyleMode: "categorized" as const,
+      vectorStyleProperty: "old",
+      vectorStyleStops: [{ value: "z", color: "#abcdef" }],
+    };
+    const result = applyMapboxStyleImport(
+      base,
+      parseMapboxStyle({
+        layers: [
+          {
+            id: "a",
+            type: "line",
+            "source-layer": "f",
+            layout: { visibility: "none" },
+            paint: { "line-width": 2 },
+            filter: ["==", ["get", "c"], "a"],
+          },
+          {
+            id: "b",
+            type: "line",
+            "source-layer": "f",
+            layout: { visibility: "none" },
+            paint: { "line-width": 3 },
+            filter: ["==", ["get", "c"], "b"],
+          },
+        ],
+      } as never),
+    );
+
+    assert.equal(result.vectorStyleMode, "single");
+  });
+
   it("replaces a categorized renderer when every line class is hidden", () => {
     const base = {
       ...DEFAULT_LAYER_STYLE,
