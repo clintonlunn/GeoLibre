@@ -87,7 +87,7 @@ import { ExpressionBuilderDialog } from "../expressions/ExpressionBuilderDialog"
 import {
   ChevronDown,
   ChevronUp,
-  ClipboardPaste,
+  ClipboardType,
   CornerDownRight,
   Info,
   Palette,
@@ -5114,7 +5114,7 @@ export function StylePanel({
                   setPasteStyleOpen(true);
                 }}
               >
-                <ClipboardPaste className="h-4 w-4" />
+                <ClipboardType className="h-4 w-4" />
               </Button>
             </>
           )}
