@@ -1456,4 +1456,107 @@ describe("a style layer the publisher switched off", () => {
     assert.equal(result.labels.enabled, true);
     assert.equal(result.labels.field, "name");
   });
+  // `winsOver` settles the two contests where one branch replaces another. Everything else a layer
+  // contributes is shared: the colour renderer is claimed once, and stroke comes from whichever of
+  // line, fill outline or circle stroke speaks last. A hidden layer stands aside from those too.
+  const categorized = (a: string, b: string) => [
+    "match",
+    ["to-string", ["get", "k"]],
+    "a",
+    a,
+    "b",
+    b,
+    "#000000",
+  ];
+
+  it("lets a drawn line claim the renderer over a hidden fill", () => {
+    const result = read([
+      {
+        id: "f",
+        type: "fill",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "fill-color": categorized("#111111", "#222222") },
+      },
+      {
+        id: "l",
+        type: "line",
+        "source-layer": "x",
+        paint: { "line-color": categorized("#00ff00", "#00aa00") },
+      },
+    ]);
+
+    assert.deepEqual(
+      result.vectorStyleStops.map((stop) => stop.color),
+      ["#00ff00", "#00aa00"],
+      "the renderer comes from the layer somebody can see",
+    );
+  });
+
+  it("lets a drawn line claim the renderer over a hidden circle", () => {
+    // The line branch defers to a circle, because line-color's fallback is the stroke and a point
+    // export needs the circle's fallback in fillColor. A hidden circle has no claim to defer to.
+    const result = read([
+      {
+        id: "c",
+        type: "circle",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "circle-color": "#111111" },
+      },
+      {
+        id: "l",
+        type: "line",
+        "source-layer": "x",
+        paint: { "line-color": categorized("#00ff00", "#00aa00") },
+      },
+    ]);
+
+    assert.equal(result.vectorStyleMode, "categorized");
+  });
+
+  it("does not let a hidden line take the stroke from a drawn fill", () => {
+    const result = read([
+      {
+        id: "f",
+        type: "fill",
+        "source-layer": "x",
+        paint: { "fill-color": "#00ff00", "fill-outline-color": "#00aa00" },
+      },
+      {
+        id: "l",
+        type: "line",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "line-color": "#ff0000", "line-width": 9 },
+      },
+    ]);
+
+    assert.equal(result.strokeColor, "#00aa00", "the fill's own outline survives");
+    assert.notEqual(result.strokeWidth, 9, "and so does its width");
+  });
+
+  it("still reads a style whose every layer is hidden", () => {
+    // Nothing drawn is contesting anything, so the old precedence stands and the style still
+    // imports rather than coming back empty.
+    const result = read([
+      {
+        id: "f",
+        type: "fill",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "fill-color": categorized("#111111", "#222222") },
+      },
+      {
+        id: "l",
+        type: "line",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "line-color": "#ff0000" },
+      },
+    ]);
+
+    assert.equal(result.vectorStyleMode, "categorized");
+    assert.equal(result.strokeColor, "#ff0000");
+  });
 });
