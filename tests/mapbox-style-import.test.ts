@@ -934,7 +934,11 @@ describe("parseMapboxStyle imports hand-written styles", () => {
       ],
     });
     assert.equal(result.style.fillColor, "#111111");
-    assert.ok(result.warnings.some((warning) => /only the first was imported/.test(warning)));
+    assert.ok(
+      result.warnings.some((warning) =>
+        /only the bottom-most drawn layer was imported/.test(warning),
+      ),
+    );
   });
 
   it("does not combine legacy layer filters into expression rules", () => {
@@ -958,7 +962,11 @@ describe("parseMapboxStyle imports hand-written styles", () => {
     assert.equal(result.matchedLayerCount, 1);
     assert.equal(result.style.vectorStyleMode, "single");
     assert.equal(result.style.fillColor, "#111111");
-    assert.ok(result.warnings.some((warning) => /only the first was imported/.test(warning)));
+    assert.ok(
+      result.warnings.some((warning) =>
+        /only the bottom-most drawn layer was imported/.test(warning),
+      ),
+    );
   });
 
   it("does not combine legacy !has filters into expression rules", () => {
@@ -982,7 +990,11 @@ describe("parseMapboxStyle imports hand-written styles", () => {
     assert.equal(result.matchedLayerCount, 1);
     assert.equal(result.style.vectorStyleMode, "single");
     assert.equal(result.style.fillColor, "#111111");
-    assert.ok(result.warnings.some((warning) => /only the first was imported/.test(warning)));
+    assert.ok(
+      result.warnings.some((warning) =>
+        /only the bottom-most drawn layer was imported/.test(warning),
+      ),
+    );
   });
 
   it("detects legacy comparisons nested under expression negation", () => {
@@ -1006,7 +1018,11 @@ describe("parseMapboxStyle imports hand-written styles", () => {
     assert.equal(result.matchedLayerCount, 1);
     assert.equal(result.style.vectorStyleMode, "single");
     assert.equal(result.style.fillColor, "#111111");
-    assert.ok(result.warnings.some((warning) => /only the first was imported/.test(warning)));
+    assert.ok(
+      result.warnings.some((warning) =>
+        /only the bottom-most drawn layer was imported/.test(warning),
+      ),
+    );
   });
 
   it("does not combine legacy none filters wrapping expression children", () => {
@@ -1030,7 +1046,11 @@ describe("parseMapboxStyle imports hand-written styles", () => {
     assert.equal(result.matchedLayerCount, 1);
     assert.equal(result.style.vectorStyleMode, "single");
     assert.equal(result.style.fillColor, "#111111");
-    assert.ok(result.warnings.some((warning) => /only the first was imported/.test(warning)));
+    assert.ok(
+      result.warnings.some((warning) =>
+        /only the bottom-most drawn layer was imported/.test(warning),
+      ),
+    );
   });
 
   it("combines a modern in filter with a string needle", () => {
@@ -1705,8 +1725,8 @@ describe("a style layer the publisher switched off", () => {
   });
 
   it("says nothing about a drawn symbol layer", () => {
-    // The diagnostic reads a type missing from its lookup as "stands aside", so a symbol layer,
-    // which never stands aside, has to be listed there or every label import reports itself hidden.
+    // The diagnostic reads a type missing from its lookup as "stands aside", so a drawn symbol
+    // layer has to be listed there or every label import reports itself hidden.
     const style = parseMapboxStyle({
       layers: [
         {
@@ -1757,7 +1777,9 @@ describe("a style layer the publisher switched off", () => {
       "none of them was imported, so the report must not say the first was",
     );
     assert.ok(
-      !style.warnings.some((warning) => /only the first was imported/.test(warning)),
+      !style.warnings.some((warning) =>
+        /only the bottom-most drawn layer was imported/.test(warning),
+      ),
       `got: ${style.warnings.join(" ")}`,
     );
   });

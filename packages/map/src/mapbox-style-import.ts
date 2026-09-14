@@ -1052,9 +1052,9 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     line,
     circle,
     heatmap,
-    // `speaking` never filters a symbol layer, because labels are not contested. The entry still
-    // has to be here: the loop reads a missing key as "this type stands aside" and would report
-    // every symbol layer as hidden.
+    // The entry still has to be here even though `symbol` already went through the same `speaking`
+    // gate as the rest above: the loop below reads a missing key as "this type stands aside" and
+    // would report every symbol layer as hidden.
     symbol,
   };
   for (const type of ["fill", "fill-extrusion", "line", "circle", "heatmap", "symbol"]) {
@@ -1074,10 +1074,12 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     if (count < 2) continue;
     if (appliedStackTypes.has(type)) {
       warnings.push(
-        `The style's multiple ${type} layers were combined as rules; paint properties other than color come from the bottom-most layer.`,
+        `The style's multiple ${type} layers were combined as rules; paint properties other than color come from the bottom-most drawn layer.`,
       );
     } else {
-      warnings.push(`The style has multiple ${type} layers; only the first was imported.`);
+      warnings.push(
+        `The style has multiple ${type} layers; only the bottom-most drawn layer was imported.`,
+      );
     }
   }
 
