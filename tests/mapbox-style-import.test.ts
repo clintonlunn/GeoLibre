@@ -1783,6 +1783,30 @@ describe("a style layer the publisher switched off", () => {
       `got: ${style.warnings.join(" ")}`,
     );
   });
+  it("still takes a drawn circle's colour beside a flat extrusion colour", () => {
+    // A flat extrusion colour sets the mode but writes only `extrusionColor`. Claiming the
+    // renderer there would silently drop the circle's own colour, which this importer read on
+    // `main`.
+    const result = applyMapboxStyleImport(
+      DEFAULT_LAYER_STYLE,
+      parseMapboxStyle({
+        layers: [
+          {
+            id: "e",
+            type: "fill-extrusion",
+            "source-layer": "x",
+            paint: { "fill-extrusion-color": "#00ff00" },
+          },
+          { id: "c", type: "circle", "source-layer": "x", paint: { "circle-color": "#0000ff" } },
+        ],
+      } as never),
+    );
+
+    assert.equal(result.vectorStyleMode, "single");
+    assert.equal(result.extrusionColor, "#00ff00");
+    assert.equal(result.fillColor, "#0000ff", "the circle's colour, not the base style's");
+  });
+
   // Importing over a layer that already has a renderer, rather than over the default style, is
   // where a mode the importer forgot to set shows up.
   it("replaces a categorized renderer with a flat extrusion colour", () => {

@@ -888,9 +888,10 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
       patch.extrusionColor = color.color;
       // Same reason the line branch says so for its flat colour: without a mode the layer keeps
       // whatever categorized or rule-based renderer it already had, and a style describing one
-      // extrusion colour imports as a no-op over it.
+      // extrusion colour imports as a no-op over it. The renderer is not claimed, though: a flat
+      // extrusion colour writes only `extrusionColor`, so a circle drawn beside it still has to
+      // supply `fillColor`, as it did before the mode was set here.
       patch.vectorStyleMode = "single";
-      colorClaimed = true;
     }
     const opacity = asFiniteNumber(paint["fill-extrusion-opacity"]);
     if (opacity !== null) patch.extrusionOpacity = opacity;
