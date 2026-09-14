@@ -573,7 +573,15 @@ export function parseQml(xml: string): QmlImportResult {
     return { style: patch, labels, warnings, matchedRuleCount: 0 };
   }
 
-  const qgis = isNode(root) ? root.qgis : undefined;
+  // A whole .qml has a <qgis> root. A fragment copied out of one does not, and `isQmlStyleXml`
+  // accepts a bare <renderer-v2> as QML, so read the root itself when the wrapper is absent.
+  // Without this a pasted fragment routes here and then reports that it is not a QML.
+  const rootNode = isNode(root) ? root : undefined;
+  const qgis = isNode(rootNode?.qgis)
+    ? rootNode.qgis
+    : rootNode && (isNode(rootNode["renderer-v2"]) || isNode(rootNode.labeling))
+      ? rootNode
+      : undefined;
   if (!isNode(qgis)) {
     warnings.push("This file is not a QGIS QML style (no <qgis> root); nothing was imported.");
     return { style: patch, labels, warnings, matchedRuleCount: 0 };

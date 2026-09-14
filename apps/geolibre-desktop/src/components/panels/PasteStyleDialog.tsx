@@ -70,6 +70,8 @@ export function PasteStyleDialog({ open, onOpenChange, onApply }: PasteStyleDial
       setError(caught instanceof Error ? caught.message : t("layers.importStyleError"));
       return;
     }
+    // Closed on success. `onApply` returning without applying (the layer was removed while the box
+    // was open) also lands here, which matches the file import: there is no row left to report on.
     onOpenChange(false);
   };
 
@@ -90,7 +92,11 @@ export function PasteStyleDialog({ open, onOpenChange, onApply }: PasteStyleDial
           placeholder={t("layers.importStyleFromTextPlaceholder")}
           value={text}
         />
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}

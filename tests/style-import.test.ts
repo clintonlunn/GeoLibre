@@ -216,3 +216,27 @@ describe("importStyleText returns a patch, not a whole style", () => {
     });
   }
 });
+
+// `isQmlStyleXml` accepts a bare `<renderer-v2>` root, so `parseQml` must read one. A fragment
+// copied out of a .qml carries no `<qgis>` wrapper, and the paste box is how it arrives.
+describe("a QML fragment with no <qgis> wrapper", () => {
+  const RENDERER =
+    `<renderer-v2 type="singleSymbol"><symbols><symbol type="line" name="0">` +
+    `<layer class="SimpleLine"><Option type="Map">` +
+    `<Option name="line_color" type="QString" value="230,0,0,255"/>` +
+    `<Option name="line_width" type="QString" value="1"/>` +
+    `</Option></layer></symbol></symbols></renderer-v2>`;
+
+  it("reads the bare renderer the same as the wrapped one", () => {
+    const bare = importStyleText(RENDERER);
+    const wrapped = importStyleText(`<qgis>${RENDERER}</qgis>`);
+
+    assert.ok(bare.ok, "a bare renderer-v2 root is a QML this reader accepts");
+    assert.ok(wrapped.ok);
+    assert.deepEqual(
+      bare.apply(DEFAULT_LAYER_STYLE),
+      wrapped.apply(DEFAULT_LAYER_STYLE),
+      "the wrapper is the only difference between the two documents",
+    );
+  });
+});
