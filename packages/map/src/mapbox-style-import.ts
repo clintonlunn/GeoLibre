@@ -1041,12 +1041,21 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     symbol,
   };
   for (const type of ["fill", "fill-extrusion", "line", "circle", "symbol"]) {
-    if (byType(type).length < 2) continue;
-    // Every layer of this type stands aside, so none of them was imported. Saying the first was
-    // would send the reader looking for symbology that is not there.
+    const count = byType(type).length;
+    if (count === 0) continue;
+    // Every layer of this type stands aside, so none of them was imported. This is reported for a
+    // lone layer too: one hidden extrusion beside a drawn fill is dropped just as silently as five
+    // are, and the reader has no other way to learn the style's extrusion went unread.
     if (speakingByType[type] === undefined) {
-      warnings.push(`The style's ${type} layers are all hidden; none was imported.`);
-    } else if (appliedStackTypes.has(type)) {
+      warnings.push(
+        count > 1
+          ? `The style's ${type} layers are all hidden; none was imported.`
+          : `The style's ${type} layer is hidden; it was not imported.`,
+      );
+      continue;
+    }
+    if (count < 2) continue;
+    if (appliedStackTypes.has(type)) {
       warnings.push(
         `The style's multiple ${type} layers were combined as rules; paint properties other than color come from the bottom-most layer.`,
       );

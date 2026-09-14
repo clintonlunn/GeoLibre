@@ -1638,6 +1638,35 @@ describe("a style layer the publisher switched off", () => {
 
     assert.equal(result.strokeColor, "#ff0000");
   });
+  it("says so when a lone hidden layer of a type is dropped", () => {
+    // The stack diagnostics below only fire for two or more layers of a type, so without this a
+    // single hidden extrusion beside a drawn fill went unimported and unmentioned.
+    const style = parseMapboxStyle({
+      layers: [
+        {
+          id: "e",
+          type: "fill-extrusion",
+          "source-layer": "x",
+          layout: { visibility: "none" },
+          paint: { "fill-extrusion-height": 10 },
+        },
+        { id: "f", type: "fill", "source-layer": "x", paint: { "fill-color": "#00ff00" } },
+      ],
+    } as never);
+
+    assert.deepEqual(style.warnings, [
+      "The style's fill-extrusion layer is hidden; it was not imported.",
+    ]);
+  });
+
+  it("says nothing when the lone layer of a type is drawn", () => {
+    const style = parseMapboxStyle({
+      layers: [{ id: "f", type: "fill", "source-layer": "x", paint: { "fill-color": "#111111" } }],
+    } as never);
+
+    assert.deepEqual(style.warnings, []);
+  });
+
   it("says a type whose layers are all hidden was not imported", () => {
     const style = parseMapboxStyle({
       layers: [
