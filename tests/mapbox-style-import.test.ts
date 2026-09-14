@@ -1559,4 +1559,83 @@ describe("a style layer the publisher switched off", () => {
     assert.equal(result.vectorStyleMode, "categorized");
     assert.equal(result.strokeColor, "#ff0000");
   });
+  // The contest is not only over the renderer and the stroke. A hidden layer stops being a
+  // candidate outright, so it cannot reach opacity, width, or the extrusion flag either.
+  it("does not let a hidden extrusion extrude a layer a drawn line describes", () => {
+    const result = read([
+      {
+        id: "e",
+        type: "fill-extrusion",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "fill-extrusion-height": 10 },
+      },
+      { id: "l", type: "line", "source-layer": "x", paint: { "line-color": "#00ff00" } },
+    ]);
+
+    assert.equal(result.extrusionEnabled, DEFAULT_LAYER_STYLE.extrusionEnabled);
+  });
+
+  it("does not take stroke width from a hidden circle", () => {
+    const result = read([
+      {
+        id: "c",
+        type: "circle",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "circle-stroke-color": "#ff0000", "circle-stroke-width": 7 },
+      },
+      {
+        id: "l",
+        type: "line",
+        "source-layer": "x",
+        paint: { "line-color": "#00ff00", "line-width": 2 },
+      },
+    ]);
+
+    assert.equal(result.strokeWidth, 2, "the drawn line's width, not the hidden circle's");
+  });
+
+  it("does not take opacity from a hidden fill", () => {
+    const result = read([
+      {
+        id: "f",
+        type: "fill",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "fill-color": "#111111", "fill-opacity": 0.1 },
+      },
+      { id: "l", type: "line", "source-layer": "x", paint: { "line-color": "#00ff00" } },
+    ]);
+
+    assert.equal(result.fillOpacity, DEFAULT_LAYER_STYLE.fillOpacity);
+  });
+  it("does not take the stroke from a hidden fill's outline", () => {
+    const result = read([
+      {
+        id: "f",
+        type: "fill",
+        "source-layer": "x",
+        layout: { visibility: "none" },
+        paint: { "fill-color": "#111111", "fill-outline-color": "#ff0000" },
+      },
+      { id: "c", type: "circle", "source-layer": "x", paint: { "circle-color": "#00ff00" } },
+    ]);
+
+    assert.equal(result.strokeColor, DEFAULT_LAYER_STYLE.strokeColor);
+  });
+
+  it("still takes the stroke from a drawn fill's outline", () => {
+    const result = read([
+      {
+        id: "f",
+        type: "fill",
+        "source-layer": "x",
+        paint: { "fill-color": "#111111", "fill-outline-color": "#ff0000" },
+      },
+      { id: "c", type: "circle", "source-layer": "x", paint: { "circle-color": "#00ff00" } },
+    ]);
+
+    assert.equal(result.strokeColor, "#ff0000");
+  });
 });

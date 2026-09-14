@@ -831,12 +831,11 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   const stackedCircle = parseStackedLayerColors(byType("circle"), "circle-color");
   const appliedStackTypes = new Set<string>();
 
-  const fill = firstOfType("fill");
-  const extrusion = firstOfType("fill-extrusion");
-  const line = firstOfType("line");
-  const circle = firstOfType("circle");
-  const heatmap = firstOfType("heatmap");
-  const symbol = firstOfType("symbol");
+  const rawExtrusion = firstOfType("fill-extrusion");
+  const rawFill = firstOfType("fill");
+  const rawLine = firstOfType("line");
+  const rawCircle = firstOfType("circle");
+  const rawHeatmap = firstOfType("heatmap");
 
   /**
    * Whether a layer competing for one GeoLibre setting should win it. A drawn layer always does. A
@@ -849,16 +848,25 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
   ): candidate is RawStyleLayer =>
     candidate !== undefined && (isDrawn(candidate) || !rival || !isDrawn(rival));
 
-  // One layer's symbology reaches several GeoLibre settings, and the render types compete for them:
-  // the colour renderer is claimed once, and stroke comes from whichever of line, fill outline or
-  // circle stroke speaks last. A hidden layer must stand aside from those while any drawn layer can
-  // speak. When every candidate is hidden nothing stands aside, so a hidden-only style still
-  // imports the way it does today.
-  const someoneIsDrawn = [extrusion, fill, line, circle].some(
+  // One layer's symbology reaches several GeoLibre settings, and the render types compete for all of
+  // them: the colour renderer is claimed once, stroke comes from whichever of line, fill outline or
+  // circle stroke speaks last, and so on down to opacity and width. Rather than guard each of those
+  // in turn, a hidden layer stops being a candidate at all while any drawn layer can speak. When
+  // every candidate is hidden nothing stands aside, so a hidden-only style imports as it does today.
+  const someoneIsDrawn = [rawExtrusion, rawFill, rawLine, rawCircle, rawHeatmap].some(
     (candidate) => candidate !== undefined && isDrawn(candidate),
   );
-  const standsAside = (candidate: RawStyleLayer | undefined): boolean =>
-    candidate !== undefined && !isDrawn(candidate) && someoneIsDrawn;
+  const speaking = (candidate: RawStyleLayer | undefined): RawStyleLayer | undefined =>
+    candidate !== undefined && !isDrawn(candidate) && someoneIsDrawn ? undefined : candidate;
+
+  const extrusion = speaking(rawExtrusion);
+  const fill = speaking(rawFill);
+  const line = speaking(rawLine);
+  const circle = speaking(rawCircle);
+  const heatmap = speaking(rawHeatmap);
+  // Labels are not contested by any other type, and GeoLibre's own exporter stamps the layer's
+  // `visible` flag onto every layer it emits, so a hidden symbol still carries its labels.
+  const symbol = firstOfType("symbol");
 
   // A drawn fill beats a hidden extrusion, which would otherwise extrude the layer and drop the
   // fill's own colour on the floor.
@@ -873,7 +881,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
       // route the recovered fallback there too (not just fillColor) or an
       // extruded categorized/rule layer keeps its old fallback after import.
       if (color.color !== undefined) patch.extrusionColor = color.color;
-      colorClaimed = !standsAside(extrusion);
+      colorClaimed = true;
     } else if (color.color) {
       patch.extrusionColor = color.color;
     }
@@ -895,7 +903,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     // Only claim the shared renderer when fill-color actually yielded one, so a
     // fill layer with a missing/unparseable color does not block a later
     // line/circle layer from contributing the color.
-    if (fillColor.mode) colorClaimed = !standsAside(fill);
+    if (fillColor.mode) colorClaimed = true;
     const opacity = paint["fill-opacity"];
     const flatOpacity = asFiniteNumber(opacity);
     if (flatOpacity !== null) {
@@ -913,13 +921,13 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     matchedLayerCount += 1;
     const paint = line.paint ?? {};
     const stroke = parseStrokeColor(paint["line-color"]);
-    if (stroke && !standsAside(line)) patch.strokeColor = stroke;
+    if (stroke) patch.strokeColor = stroke;
     // Defer the color-renderer claim to the circle layer when one is present:
     // line-color's baked fallback is strokeColor, but applyColorRenderer routes
     // a fallback into fillColor, which is the point (circle) fallback. Letting a
     // point+line export's circle claim the renderer keeps fillColor correct; a
     // line-only layer still claims here (its fillColor is not rendered anyway).
-    if (!colorClaimed && (!circle || standsAside(circle)) && !standsAside(line)) {
+    if (!colorClaimed && !circle) {
       const color = stackedLine ?? parseColorValue(paint["line-color"], warnings);
       if (color.mode && color.mode !== "single") {
         if (stackedLine) {
@@ -933,7 +941,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
         colorClaimed = true;
       }
     }
-    if (paint["line-width"] !== undefined && !standsAside(line)) {
+    if (paint["line-width"] !== undefined) {
       parseLineWidth(paint["line-width"], patch, warnings);
     }
     if (appliedStackTypes.has("line")) applyStackedZoomRange(byType("line"), patch);
@@ -944,7 +952,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     matchedLayerCount += 1;
     patch.pointRenderer = "single";
     const paint = circle.paint ?? {};
-    if (!colorClaimed && !standsAside(circle)) {
+    if (!colorClaimed) {
       applyColorRenderer(stackedCircle ?? parseColorValue(paint["circle-color"], warnings), patch);
       if (stackedCircle) {
         appliedStackTypes.add("circle");
@@ -974,7 +982,7 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
       warnings.push("The circle opacity is data-driven; the layer keeps its current fill opacity.");
     }
     const strokeColor = asString(paint["circle-stroke-color"]);
-    if (strokeColor && !standsAside(circle)) patch.strokeColor = strokeColor;
+    if (strokeColor) patch.strokeColor = strokeColor;
     const strokeWidth = asFiniteNumber(paint["circle-stroke-width"]);
     if (strokeWidth !== null) {
       patch.strokeWidth = strokeWidth;
