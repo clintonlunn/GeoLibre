@@ -1751,6 +1751,41 @@ describe("a style layer the publisher switched off", () => {
     assert.deepEqual(style.warnings, []);
   });
 
+  it("does not call the layer drawn when every layer in the style is hidden", () => {
+    // Nothing is drawn anywhere, so nothing stands aside and a hidden line still speaks. The
+    // report must not then claim the layer it picked was drawn.
+    const style = parseMapboxStyle({
+      layers: [
+        {
+          id: "a",
+          type: "line",
+          "source-layer": "f",
+          layout: { visibility: "none" },
+          paint: { "line-color": "#00ff00" },
+        },
+        {
+          id: "b",
+          type: "line",
+          "source-layer": "f",
+          layout: { visibility: "none" },
+          paint: { "line-color": ["get", "colour"] },
+        },
+      ],
+    } as never);
+
+    assert.equal(style.style.strokeColor, "#00ff00");
+    assert.ok(
+      style.warnings.some((warning) =>
+        /multiple line layers, all hidden; only the bottom-most one was imported/.test(warning),
+      ),
+      `got: ${style.warnings.join(" ")}`,
+    );
+    assert.ok(
+      !style.warnings.some((warning) => /drawn layer was imported/.test(warning)),
+      `got: ${style.warnings.join(" ")}`,
+    );
+  });
+
   it("says a type whose layers are all hidden was not imported", () => {
     const style = parseMapboxStyle({
       layers: [

@@ -1064,7 +1064,8 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     // Every layer of this type stands aside, so none of them was imported. This is reported for a
     // lone layer too: one hidden extrusion beside a drawn fill is dropped just as silently as five
     // are, and the reader has no other way to learn the style's extrusion went unread.
-    if (speakingByType[type] === undefined) {
+    const representative = speakingByType[type];
+    if (representative === undefined) {
       warnings.push(
         count > 1
           ? `The style's ${type} layers are all hidden; none was imported.`
@@ -1074,12 +1075,17 @@ export function parseMapboxStyle(input: unknown): MapboxStyleImportResult {
     }
     if (count < 2) continue;
     if (appliedStackTypes.has(type)) {
+      // A stack only applies when at least one class is drawn, so the representative is drawn.
       warnings.push(
         `The style's multiple ${type} layers were combined as rules; paint properties other than color come from the bottom-most drawn layer.`,
       );
     } else {
+      // With nothing drawn anywhere in the style, a hidden layer still speaks (nothing stands
+      // aside), so the representative is not necessarily drawn.
       warnings.push(
-        `The style has multiple ${type} layers; only the bottom-most drawn layer was imported.`,
+        isDrawn(representative)
+          ? `The style has multiple ${type} layers; only the bottom-most drawn layer was imported.`
+          : `The style has multiple ${type} layers, all hidden; only the bottom-most one was imported.`,
       );
     }
   }
