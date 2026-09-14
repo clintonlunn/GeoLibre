@@ -1318,3 +1318,142 @@ describe("the colour a layer with no colour of its own is drawn in", () => {
     );
   });
 });
+
+// A layer the publisher switched off must not decide what the imported layer looks like while a
+// drawn one is available. `main` never read `layout.visibility` on this path at all.
+describe("a style layer the publisher switched off", () => {
+  const lineClass = (
+    id: string,
+    color: string,
+    options: { hidden?: boolean; minzoom?: number; maxzoom?: number } = {},
+  ) => ({
+    id,
+    type: "line",
+    "source-layer": "f",
+    ...(options.minzoom === undefined
+      ? {}
+      : { minzoom: options.minzoom, maxzoom: options.maxzoom }),
+    ...(options.hidden ? { layout: { visibility: "none" } } : {}),
+    paint: { "line-color": color },
+    filter: ["==", ["get", "c"], id],
+  });
+
+  const read = (layers: unknown[]) =>
+    applyMapboxStyleImport(DEFAULT_LAYER_STYLE, parseMapboxStyle({ layers } as never));
+
+  it("imports a hidden class switched off", () => {
+    const result = read([lineClass("a", "#00ff00"), lineClass("b", "#e60000", { hidden: true })]);
+
+    assert.equal(result.vectorStyleMode, "rule-based");
+    assert.deepEqual(
+      result.vectorRules
+        .filter((rule) => !rule.isElse)
+        // Absent means enabled, which is how every other rule this importer builds reads.
+        .map((rule) => [rule.label, rule.enabled ?? true]),
+      [
+        ["b", false],
+        ["a", true],
+      ],
+      "the class nobody sees comes in unchecked, the drawn one checked",
+    );
+  });
+
+  it("keeps a hidden class out of the zoom range", () => {
+    const result = read([
+      lineClass("a", "#00ff00", { minzoom: 4, maxzoom: 12 }),
+      lineClass("b", "#e60000", { hidden: true, minzoom: 0, maxzoom: 22 }),
+    ]);
+
+    assert.equal(result.minZoom, 4);
+    assert.equal(result.maxZoom, 12);
+  });
+
+  it("falls back to a single layer when every class is hidden", () => {
+    const result = read([
+      lineClass("a", "#00ff00", { hidden: true }),
+      lineClass("b", "#e60000", { hidden: true }),
+    ]);
+
+    assert.notEqual(
+      result.vectorStyleMode,
+      "rule-based",
+      "rules that are every one disabled would import the layer blank and report success",
+    );
+  });
+
+  it("prefers a drawn layer over an earlier hidden one", () => {
+    const result = read([
+      {
+        id: "h",
+        type: "line",
+        "source-layer": "f",
+        layout: { visibility: "none" },
+        paint: { "line-color": "#ff0000" },
+      },
+      { id: "d", type: "line", "source-layer": "f", paint: { "line-color": "#00ff00" } },
+      // An expression colour on any entry disqualifies the stack, forcing the single-layer path.
+      { id: "x", type: "line", "source-layer": "f", paint: { "line-color": ["get", "colour"] } },
+    ]);
+
+    assert.equal(result.strokeColor, "#00ff00");
+  });
+
+  it("does not let a hidden heatmap take the point renderer from a drawn circle", () => {
+    const result = read([
+      { id: "c", type: "circle", "source-layer": "f", paint: { "circle-color": "#00ff00" } },
+      { id: "h", type: "heatmap", "source-layer": "f", layout: { visibility: "none" } },
+    ]);
+
+    assert.equal(result.pointRenderer, "single");
+    assert.equal(result.fillColor, "#00ff00");
+  });
+
+  it("does not let a hidden extrusion take the layer from a drawn fill", () => {
+    const result = read([
+      { id: "f", type: "fill", "source-layer": "f", paint: { "fill-color": "#00ff00" } },
+      {
+        id: "e",
+        type: "fill-extrusion",
+        "source-layer": "f",
+        layout: { visibility: "none" },
+        paint: { "fill-extrusion-height": 10 },
+      },
+    ]);
+
+    assert.equal(result.extrusionEnabled, false);
+    assert.equal(result.fillColor, "#00ff00", "the drawn fill's colour survives");
+  });
+
+  // Two cases that are correct as they stand, guarded so the fix above does not take them with it.
+  it("still lets a lone hidden layer donate its paint", () => {
+    const result = read([
+      {
+        id: "h",
+        type: "line",
+        "source-layer": "f",
+        layout: { visibility: "none" },
+        paint: { "line-color": "#ff0000" },
+      },
+    ]);
+
+    assert.equal(result.strokeColor, "#ff0000", "there is no drawn alternative to prefer");
+  });
+
+  it("still imports labels from a hidden symbol layer", () => {
+    // GeoLibre's exporter stamps the whole layer's `visible` flag onto every layer it emits, so
+    // reading it as class state would switch labels off when re-importing an export taken from a
+    // hidden layer.
+    const result = read([
+      {
+        id: "s",
+        type: "symbol",
+        "source-layer": "f",
+        layout: { visibility: "none", "text-field": ["get", "name"] },
+        paint: { "text-color": "#111111" },
+      },
+    ]);
+
+    assert.equal(result.labels.enabled, true);
+    assert.equal(result.labels.field, "name");
+  });
+});
